@@ -1,1 +1,0 @@
-import{c as t}from"./utils-CmSxFldp.js";import{d as n,L as o,e as r,i as l,b2 as c,u as i}from"./vendor-C-CW143M.js";const f=n({__name:"CardTitle",props:{class:{}},setup(e){const s=e;return(a,m)=>(r(),o("h3",{class:c(i(t)("text-2xl font-semibold leading-none tracking-tight",s.class))},[l(a.$slots,"default")],2))}});export{f as _};

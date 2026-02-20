@@ -1,1 +1,0 @@
-import{d as o,L as s,e as a,m as r}from"./vendor-C-CW143M.js";const p=o({inheritAttrs:!1,__name:"AppLogoIcon",props:{className:{}},setup(t){return(e,n)=>(a(),s("img",r({src:"/logo.svg",class:e.className,style:{"background-color":"white","border-radius":"50%","aspect-ratio":"1","object-fit":"contain",padding:"4px"}},e.$attrs,{alt:"Logo"}),null,16))}});export{p as _};
