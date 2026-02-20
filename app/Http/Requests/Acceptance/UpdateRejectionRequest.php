@@ -14,8 +14,13 @@ class UpdateRejectionRequest extends FormRequest
 
     public function rules()
     {
-        $rejection = $this->route('rejection');
-        $type      = $this->input('type');
+        // Get the rejection ID from the route
+        $rejectionId = $this->route('rejection');
+
+        // Retrieve the Rejection object using the ID
+        $rejection = \App\Models\Rejection::findOrFail($rejectionId);
+
+        $type = $this->input('type');
 
         $rules = [
             'tenant_id'            => 'required|exists:tenants,id',
@@ -29,7 +34,7 @@ class UpdateRejectionRequest extends FormRequest
 
         if ($type === 'advanced_block') {
             // Get the existing sub-record's own primary key to ignore in unique check
-            $existingId = $rejection->advancedRejectedBlocks()->value('id');
+            $existingId = $rejection->advancedRejectedBlock()->value('id');
 
             $rules += [
                 'advance_block_rejection_id' => 'required|string|max:255|unique:advanced_rejected_blocks,advance_block_rejection_id,' . $existingId,
@@ -41,7 +46,7 @@ class UpdateRejectionRequest extends FormRequest
         }
 
         if ($type === 'block') {
-            $existingId = $rejection->rejectedBlocks()->value('id');
+            $existingId = $rejection->rejectedBlock()->value('id');
 
             $rules += [
                 'block_id'           => 'required|string|max:255|unique:rejected_blocks,block_id,' . $existingId,
@@ -53,7 +58,7 @@ class UpdateRejectionRequest extends FormRequest
         }
 
         if ($type === 'load') {
-            $existingId = $rejection->rejectedLoads()->value('id');
+            $existingId = $rejection->rejectedLoad()->value('id');
 
             $rules += [
                 'load_id'               => 'required|string|max:255|unique:rejected_loads,load_id,' . $existingId,
@@ -65,7 +70,6 @@ class UpdateRejectionRequest extends FormRequest
 
         return $rules;
     }
-
     protected function prepareForValidation()
     {
         if (!is_null(Auth::user()->tenant_id)) {

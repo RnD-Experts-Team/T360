@@ -61,18 +61,21 @@ class Rejection extends Model
 
         // Automatically adjust 'driver_controllable' and 'carrier_controllable' before saving or updating
         static::saving(function ($rejection) {
-            // If 'rejection_reason' contains "amazon" (case-insensitive)
+            // ✅ Guard against null rejection_reason before running regex
+            if (empty($rejection->rejection_reason)) {
+                return true;
+            }
+
             if (preg_match('/amazon/i', $rejection->rejection_reason)) {
-                $rejection->driver_controllable = false;
+                $rejection->driver_controllable  = false;
                 $rejection->carrier_controllable = false;
             }
 
-            // If 'rejection_reason' contains "MECHANICAL_TRAILER", or "WEATHER" (case-insensitive)
             if (
                 preg_match('/mechanical[_]?trailer/i', $rejection->rejection_reason) ||
                 preg_match('/weather/i', $rejection->rejection_reason)
             ) {
-                $rejection->driver_controllable = false;
+                $rejection->driver_controllable  = false;
                 $rejection->carrier_controllable = false;
             }
 

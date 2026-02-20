@@ -26,11 +26,4 @@ class RejectedLoad extends Model
     {
         return $this->belongsTo(Rejection::class);
     }
-
-    protected static function booted()
-    {
-        if (Auth::check()) {
-            static::addGlobalScope(new TenantScope);
-        }
-    }
 }

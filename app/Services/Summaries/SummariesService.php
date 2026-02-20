@@ -115,20 +115,19 @@ class SummariesService
             'endWeekNumber'   => $endWeekNumber,
             'year'            => $year,
         ];
-        if($dateFilter == 't6w'){
+        if ($dateFilter == 't6w') {
             $maintenanceStartDate = $startDate->copy()->subWeek();
-        $maintenanceEndDate = $endDate->copy()->subWeek();
-        }
-        else {
+            $maintenanceEndDate = $endDate->copy()->subWeek();
+        } else {
             $maintenanceStartDate = $startDate->copy();
             $maintenanceEndDate = $endDate->copy();
         }
         // Fetch data
         $outstandingDateCarbon = $outstandingDate ? Carbon::parse($outstandingDate) : null;
-        $maintenaceBreakdown=$this->maintenanceBreakdownService->getMaintenanceBreakdown($maintenanceStartDate, $maintenanceEndDate, $minInvoiceAmount, $outstandingDateCarbon);
+        $maintenaceBreakdown = $this->maintenanceBreakdownService->getMaintenanceBreakdown($maintenanceStartDate, $maintenanceEndDate, $minInvoiceAmount, $outstandingDateCarbon);
         $milesDriven = $this->getMilesDrivenSum($startDate, $endDate, $dateFilter);
         $summaries = [
-            'performance' => $this->performanceDataService->getPerformanceData($startDate, $endDate, $label,$maintenaceBreakdown['qs_MVtS']*100),
+            'performance' => $this->performanceDataService->getPerformanceData($startDate, $endDate, $label, $maintenaceBreakdown['qs_MVtS'] * 100),
             'safety' => $this->safetyDataService->getSafetyData($startDate, $endDate),
             'date_range' => $dateRange
         ];
@@ -137,9 +136,9 @@ class SummariesService
         $tenants = $isSuperAdmin ? Tenant::all() : [];
 
         // Convert outstandingDate to Carbon instance if it's provided
-        $permissions=Auth::user()->getAllPermissions();
+        $permissions = Auth::user()->getAllPermissions();
         // Adjust dates for maintenance breakdown (weeks 16-24 instead of 17-25)
-        
+
         $driverOverAll = $this->getDriversOverallPerformance($startDate, $endDate);
         return [
             'summaries' => $summaries,
@@ -170,8 +169,8 @@ class SummariesService
 
         // 0=Sunday, …, 6=Saturday for Jan 1
         $firstDayDow = $date->copy()
-                            ->startOfYear()
-                            ->dayOfWeek;
+            ->startOfYear()
+            ->dayOfWeek;
 
         // shift so weeks bound on Sunday, then ceil
         return (int) ceil(($dayOfYear + $firstDayDow) / 7);
@@ -186,125 +185,112 @@ class SummariesService
      */
     public function getDriversOverallPerformance($startDate, $endDate): array
     {
-        // Ensure dates are Carbon instances
-        if (!($startDate instanceof Carbon)) {
-            $startDate = Carbon::parse($startDate);
-        }
-        
-        if (!($endDate instanceof Carbon)) {
-            $endDate = Carbon::parse($endDate);
-        }
-        
-        
+        if (!($startDate instanceof Carbon)) $startDate = Carbon::parse($startDate);
+        if (!($endDate instanceof Carbon))   $endDate   = Carbon::parse($endDate);
+
+        // Total rejection penalties (driver-controllable) for the period
         $totalRejectionPenaltiesQuery = DB::table('rejections')
             ->whereBetween('date', [$startDate, $endDate])
             ->where('driver_controllable', true)
             ->selectRaw('SUM(penalty) as total_rejection_penalties');
-        
         $this->applyTenantFilter($totalRejectionPenaltiesQuery);
         $totalRejectionPenalties = $totalRejectionPenaltiesQuery->first()->total_rejection_penalties ?? 0;
-        
+
+        // Total delay penalties (driver-controllable) for the period
         $totalDelayPenaltiesQuery = DB::table('delays')
             ->whereBetween('date', [$startDate, $endDate])
             ->where('driver_controllable', true)
             ->selectRaw('SUM(penalty) as total_delay_penalties');
-        
         $this->applyTenantFilter($totalDelayPenaltiesQuery);
         $totalDelayPenalties = $totalDelayPenaltiesQuery->first()->total_delay_penalties ?? 0;
-        
-        // Get all drivers
-        $driversQuery = DB::table('drivers')
-            ->select('id', 'first_name', 'last_name', 'netradyne_user_name');
-        
+
+        // All drivers
+        $driversQuery = DB::table('drivers')->select('id', 'first_name', 'last_name', 'netradyne_user_name');
         $this->applyTenantFilter($driversQuery);
         $drivers = $driversQuery->get();
-        
-        // Initialize array to store results
+
         $driversOverallScores = [];
-        
-        // Process each driver in a single loop
+
         foreach ($drivers as $driver) {
-            $driverName = $driver->first_name . ' ' . $driver->last_name;
+            $driverName        = $driver->first_name . ' ' . $driver->last_name;
             $netradyneUserName = $driver->netradyne_user_name;
-            
-            // Get safety score for the driver
+
+            // Safety score
             $safetyScoreQuery = DB::table('safety_data')
-                ->where(function($query) use ($driverName, $netradyneUserName) {
-                    $query->where('user_name', $netradyneUserName)
-                          ->orWhere('driver_name', $driverName);
+                ->where(function ($q) use ($driverName, $netradyneUserName) {
+                    $q->where('user_name', $netradyneUserName)
+                        ->orWhere('driver_name', $driverName);
                 })
                 ->whereBetween('date', [$startDate, $endDate])
-                ->selectRaw("AVG(driver_score) as safety_score, SUM(minutes_analyzed) as minutes_analyzed");
-            
+                ->selectRaw('AVG(driver_score) as safety_score, SUM(minutes_analyzed) as minutes_analyzed');
             $this->applyTenantFilter($safetyScoreQuery);
-            $safetyScore = $safetyScoreQuery->first()->safety_score ?? 0;
-            $minutesAnalyzed = $safetyScoreQuery->first()->minutes_analyzed?? 0;
+            $safetyRow       = $safetyScoreQuery->first();
+            $safetyScore     = $safetyRow->safety_score     ?? 0;
+            $minutesAnalyzed = $safetyRow->minutes_analyzed ?? 0;
 
-            if($minutesAnalyzed == 0){
-                continue;
-            }
+            if ($minutesAnalyzed == 0) continue;
 
+            // ─── Rejection penalties ──────────────────────────────────────────────
+            // Driver name now lives in rejected_loads and rejected_blocks,
+            // not on the rejections table — join through sub-tables.
 
-            // Get rejection penalties for the driver
             $rejectionPenaltiesQuery = DB::table('rejections')
-                ->where('driver_name', $driverName)
-                ->whereBetween('date', [$startDate, $endDate])
-                ->where('driver_controllable', true)
-                ->selectRaw('SUM(penalty) as total_rejection_penalties');
-            
+                ->join(DB::raw('(
+                SELECT rejection_id FROM rejected_loads  WHERE LOWER(driver_name) = ?
+                UNION
+                SELECT rejection_id FROM rejected_blocks WHERE LOWER(driver_name) = ?
+            ) AS driver_rejections'), function ($join) {
+                    $join->on('rejections.id', '=', 'driver_rejections.rejection_id');
+                })
+                ->whereBetween('rejections.date', [$startDate, $endDate])
+                ->where('rejections.driver_controllable', true)
+                ->selectRaw('SUM(rejections.penalty) as total_rejection_penalties')
+                ->addBinding([strtolower($driverName), strtolower($driverName)], 'join');
+
             $this->applyTenantFilter($rejectionPenaltiesQuery);
             $rejectionPenalties = $rejectionPenaltiesQuery->first()->total_rejection_penalties ?? 0;
-            
-            // Get delay penalties for the driver
+
+            // ─── Delay penalties ──────────────────────────────────────────────────
+            // Delays still store driver_name directly on the delays table
             $delayPenaltiesQuery = DB::table('delays')
-                ->where('driver_name', $driverName)
+                ->whereRaw('LOWER(driver_name) = ?', [strtolower($driverName)])
                 ->whereBetween('date', [$startDate, $endDate])
                 ->where('driver_controllable', true)
                 ->selectRaw('SUM(penalty) as total_delay_penalties');
-            
             $this->applyTenantFilter($delayPenaltiesQuery);
             $delayPenalties = $delayPenaltiesQuery->first()->total_delay_penalties ?? 0;
-            
-            // Calculate scores directly
-            $acceptanceScore = 100;
-            if ($totalRejectionPenalties > 0) {
-                $acceptanceScore = 100 - ($rejectionPenalties * 100 / $totalRejectionPenalties);
-            }
-            
-            $onTimeScore = 100;
-            if ($totalDelayPenalties > 0) {
-                $onTimeScore = 100 - ($delayPenalties * 100 / $totalDelayPenalties);
-            }
-            
-            $safetyScoreNormalized = 0;
-                $safetyScoreNormalized = $safetyScore * 100 / 1050;
-            
-            $overallScore = ($acceptanceScore + $onTimeScore + $safetyScoreNormalized) / 3;
-            
-            // Add driver data with all scores calculated
+
+            // ─── Scores ───────────────────────────────────────────────────────────
+            $acceptanceScore = $totalRejectionPenalties > 0
+                ? 100 - ($rejectionPenalties * 100 / $totalRejectionPenalties)
+                : 100;
+
+            $onTimeScore = $totalDelayPenalties > 0
+                ? 100 - ($delayPenalties * 100 / $totalDelayPenalties)
+                : 100;
+
+            $safetyScoreNormalized = $safetyScore * 100 / 1050;
+            $overallScore          = ($acceptanceScore + $onTimeScore + $safetyScoreNormalized) / 3;
+
             $driversOverallScores[] = [
-                'driver_name' => $driverName,
-                'acceptance_score' => round($acceptanceScore, 2),
-                'on_time_score' => round($onTimeScore, 2),
-                'safety_score' => round($safetyScoreNormalized, 2),
-                'overall_score' => round($overallScore, 2),
-                'raw_safety_score' => round($safetyScore,2),
+                'driver_name'         => $driverName,
+                'acceptance_score'    => round($acceptanceScore, 2),
+                'on_time_score'       => round($onTimeScore, 2),
+                'safety_score'        => round($safetyScoreNormalized, 2),
+                'overall_score'       => round($overallScore, 2),
+                'raw_safety_score'    => round($safetyScore, 2),
                 'rejection_penalties' => $rejectionPenalties,
-                'delay_penalties' => $delayPenalties,
-                'minutes_analyzed' => $minutesAnalyzed,
+                'delay_penalties'     => $delayPenalties,
+                'minutes_analyzed'    => $minutesAnalyzed,
             ];
         }
-        
-        // Sort drivers by overall score (highest to lowest)
-        usort($driversOverallScores, function($a, $b) {
-            return $b['overall_score'] <=> $a['overall_score'];
-        });
-        
-        return [
-            'drivers' => $driversOverallScores,
-        ];
+
+        usort($driversOverallScores, fn($a, $b) => $b['overall_score'] <=> $a['overall_score']);
+
+        return ['drivers' => $driversOverallScores];
     }
-    
+
+
     /**
      * Apply tenant filter to query if user is authenticated
      */
@@ -324,35 +310,35 @@ class SummariesService
      * @return float The total miles driven
      */
     public function getMilesDrivenSum($startDate, $endDate, $dateFilter = null): float
-{
-    // Skip calculation for yesterday timeframe
-    if ($dateFilter === 'yesterday') {
-        return 0;
+    {
+        // Skip calculation for yesterday timeframe
+        if ($dateFilter === 'yesterday') {
+            return 0;
+        }
+
+        // Ensure dates are Carbon instances
+        if (!($startDate instanceof Carbon)) {
+            $startDate = Carbon::parse($startDate);
+        }
+
+        if (!($endDate instanceof Carbon)) {
+            $endDate = Carbon::parse($endDate);
+        }
+
+        // Query to get sum of miles driven within the date range
+        $query = DB::table('miles_driven')
+            ->where(function ($q) use ($startDate, $endDate) {
+                $q->whereBetween('week_start_date', [$startDate, $endDate])
+                    ->orWhereBetween('week_end_date', [$startDate, $endDate]);
+            })
+            ->selectRaw('SUM(miles) as total_miles');
+
+        // Apply tenant filter if user is authenticated
+        $this->applyTenantFilter($query);
+
+        // Get the result safely
+        $result = $query->first();
+
+        return $result ? (float) $result->total_miles : 0;
     }
-
-    // Ensure dates are Carbon instances
-    if (!($startDate instanceof Carbon)) {
-        $startDate = Carbon::parse($startDate);
-    }
-
-    if (!($endDate instanceof Carbon)) {
-        $endDate = Carbon::parse($endDate);
-    }
-
-    // Query to get sum of miles driven within the date range
-    $query = DB::table('miles_driven')
-        ->where(function ($q) use ($startDate, $endDate) {
-            $q->whereBetween('week_start_date', [$startDate, $endDate])
-              ->orWhereBetween('week_end_date', [$startDate, $endDate]);
-        })
-        ->selectRaw('SUM(miles) as total_miles');
-
-    // Apply tenant filter if user is authenticated
-    $this->applyTenantFilter($query);
-
-    // Get the result safely
-    $result = $query->first();
-
-    return $result ? (float) $result->total_miles : 0;
-}
 }

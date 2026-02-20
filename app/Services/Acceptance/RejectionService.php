@@ -77,11 +77,11 @@ class RejectionService
         if ($request->filled('rejectionType')) {
             $type = $request->input('rejectionType');
             if ($type === 'advanced_block') {
-                $query->whereHas('advancedRejectedBlocks');
+                $query->whereHas('advancedRejectedBlock');
             } elseif ($type === 'block') {
-                $query->whereHas('rejectedBlocks');
+                $query->whereHas('rejectedBlock');
             } elseif ($type === 'load') {
-                $query->whereHas('rejectedLoads');
+                $query->whereHas('rejectedLoad');
             }
         }
 
