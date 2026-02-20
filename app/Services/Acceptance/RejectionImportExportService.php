@@ -606,7 +606,10 @@ class RejectionImportExportService
 
         $fileName = 'rejections_' . Str::random(8) . '.csv';
         $filePath = public_path($fileName);
-        $file     = fopen($filePath, 'w');
+
+        // ✅ Write UTF-8 BOM so Excel renders special characters correctly
+        $file = fopen($filePath, 'w');
+        fprintf($file, chr(0xEF) . chr(0xBB) . chr(0xBF));
 
         $headers = [];
         if ($isSuperAdmin) $headers[] = 'Company Name';
@@ -645,7 +648,7 @@ class RejectionImportExportService
             $exportPenalty = $rejection->disputed === 'won' ? 0 : $rejection->penalty;
 
             $baseRow = [];
-            if ($isSuperAdmin) $baseRow[] = $rejection->tenant->name ?? '—';
+            if ($isSuperAdmin) $baseRow[] = $rejection->tenant->name ?? '';
 
             $baseRow = array_merge($baseRow, [
                 Carbon::parse($rejection->date)->format('m/d/Y'),
@@ -654,7 +657,7 @@ class RejectionImportExportService
                 $this->humanDisputed($rejection->disputed),
                 $rejection->carrier_controllable ? 'Yes' : 'No',
                 $rejection->driver_controllable  ? 'Yes' : 'No',
-                $rejection->rejection_reason ?? '—',
+                $rejection->rejection_reason ?? '',   // ✅ empty string instead of em-dash
             ]);
 
             $advBlock = $rejection->advancedRejectedBlock->first();
@@ -663,7 +666,7 @@ class RejectionImportExportService
 
             if ($advBlock) {
                 fputcsv($file, array_merge($baseRow, [
-                    $advBlock->advance_block_rejection_id ?? '—',
+                    $advBlock->advance_block_rejection_id ?? '',
                     Carbon::parse($advBlock->week_start)->format('W'),
                     Carbon::parse($advBlock->week_start)->format('m/d/Y'),
                     Carbon::parse($advBlock->week_end)->format('m/d/Y'),
@@ -687,12 +690,12 @@ class RejectionImportExportService
                     '',
                     '',
                     '',
-                    $block->block_id           ?? '—',
-                    $block->driver_name        ?? '—',
-                    $block->block_start        ? Carbon::parse($block->block_start)->format('m/d/Y H:i')        : '—',
-                    $block->block_end          ? Carbon::parse($block->block_end)->format('m/d/Y H:i')          : '—',
-                    $block->rejection_datetime ? Carbon::parse($block->rejection_datetime)->format('m/d/Y H:i') : '—',
-                    $this->humanBlockBucket($block->rejection_bucket),
+                    $block->block_id           ?? '',
+                    $block->driver_name        ?? '',    // ✅ empty string, not em-dash
+                    $block->block_start        ? Carbon::parse($block->block_start)->format('m/d/Y H:i')        : '',
+                    $block->block_end          ? Carbon::parse($block->block_end)->format('m/d/Y H:i')          : '',
+                    $block->rejection_datetime ? Carbon::parse($block->rejection_datetime)->format('m/d/Y H:i') : '',
+                    $block->rejection_bucket   ? $this->humanBlockBucket($block->rejection_bucket)              : '',
                     '',
                     '',
                     '',
@@ -711,12 +714,12 @@ class RejectionImportExportService
                     '',
                     '',
                     '',
-                    $load->load_id             ?? '—',
-                    $load->origin_yard_arrival ? Carbon::parse($load->origin_yard_arrival)->format('m/d/Y H:i') : '—',
-                    $this->humanLoadBucket($load->rejection_bucket),
+                    $load->load_id             ?? '',
+                    $load->origin_yard_arrival ? Carbon::parse($load->origin_yard_arrival)->format('m/d/Y H:i') : '',
+                    $load->rejection_bucket    ? $this->humanLoadBucket($load->rejection_bucket)                : '',
                 ]));
             } else {
-                fputcsv($file, array_merge($baseRow, array_fill(0, 15, '—')));
+                fputcsv($file, array_merge($baseRow, array_fill(0, 15, '')));
             }
         }
 
@@ -724,16 +727,26 @@ class RejectionImportExportService
         return Response::download($filePath)->deleteFileAfterSend(true);
     }
 
-    // ─────────────────────────────────────────────────────────
-    // HUMAN-READABLE HELPERS
-    // ─────────────────────────────────────────────────────────
-
     private function humanRejectionType(Rejection $rejection): string
     {
-        if ($rejection->advancedRejectedBlock->isNotEmpty()) return 'Advanced Rejection';
-        if ($rejection->rejectedBlock->isNotEmpty())         return 'Rejected Block';
-        if ($rejection->rejectedLoad->isNotEmpty())          return 'Rejected Load';
-        return '—';
+        $hasReason = !empty($rejection->rejection_reason);
+
+        if ($rejection->advancedRejectedBlock->isNotEmpty()) {
+            // Advanced blocks always show as "Advanced Rejection" regardless of reason
+            return 'Advanced Rejection';
+        }
+
+        if ($rejection->rejectedBlock->isNotEmpty()) {
+            // ✅ "Rejected Block" only if there's a reason, otherwise just "Block"
+            return $hasReason ? 'Rejected Block' : 'Block';
+        }
+
+        if ($rejection->rejectedLoad->isNotEmpty()) {
+            // ✅ "Rejected Load" only if there's a reason, otherwise just "Load"
+            return $hasReason ? 'Rejected Load' : 'Load';
+        }
+
+        return '';
     }
 
     private function humanBlockBucket(?string $bucket): string
@@ -741,17 +754,17 @@ class RejectionImportExportService
         return match ($bucket) {
             'more_than_24' => '24+ hours before start',
             'less_than_24' => 'Less than 24 hours before start',
-            default        => $bucket ?? '—',
+            default        => $bucket ?? '',
         };
     }
 
     private function humanLoadBucket(?string $bucket): string
     {
         return match ($bucket) {
-            'rejected_after_start_time'               => 'Rejected after start time',
-            'rejected_0_6_hours_before_start_time'    => 'Rejected 0–6 hours before start',
-            'rejected_6_plus_hours_before_start_time' => 'Rejected 6+ hours before start',
-            default                                   => $bucket ?? '—',
+            'rejected_after_start_time'               => 'After start time',
+            'rejected_0_6_hours_before_start_time'    => '0-6 hours before start',
+            'rejected_6_plus_hours_before_start_time' => '6+ hours before start',
+            default                                   => $bucket ?? '',
         };
     }
 
@@ -762,7 +775,7 @@ class RejectionImportExportService
             'pending' => 'Pending',
             'won'     => 'Won',
             'lost'    => 'Lost',
-            default   => '—',
+            default   => '',
         };
     }
 }

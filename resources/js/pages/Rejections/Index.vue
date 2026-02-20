@@ -47,7 +47,6 @@
             Delete Selected ({{ selectedRejections.length }})
           </Button>
 
-          <!-- Import CSV — single button, type chosen inside modal -->
           <Button
             v-if="permissionNames.includes('acceptance.import')"
             variant="secondary"
@@ -130,35 +129,75 @@
       <Card class="mb-6">
         <CardHeader class="p-2 md:p-4 lg:p-6">
           <div class="flex items-center justify-between">
-            <div class="flex items-center gap-2">
+
+            <!-- Left: Title + reason toggle + active pills -->
+            <div class="flex items-center gap-3 flex-wrap">
               <CardTitle class="text-lg md:text-xl lg:text-2xl">Filters</CardTitle>
 
-              <!-- Active filter pills (when collapsed) -->
-              <div v-if="!showFilters && hasActiveFilters" class="ml-4 flex flex-wrap gap-2">
-                <div v-if="localFilters.search" class="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold">
-                  Search: {{ localFilters.search }}
-                </div>
-                <div v-if="localFilters.rejectionType" class="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold">
-                  Type: <span class="capitalize ml-1">{{ rejectionTypeLabel(localFilters.rejectionType) }}</span>
-                </div>
-                <div v-if="localFilters.disputed" class="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold">
-                  Disputed: <span class="capitalize ml-1">{{ localFilters.disputed }}</span>
-                </div>
-                <div v-if="localFilters.carrierControllable" class="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold">
-                  Carrier: {{ localFilters.carrierControllable === 'true' ? 'Yes' : 'No' }}
-                </div>
-                <div v-if="localFilters.driverControllable" class="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold">
-                  Driver: {{ localFilters.driverControllable === 'true' ? 'Yes' : 'No' }}
-                </div>
-                <div
-                  v-if="localFilters.rejectionReasonFilter && localFilters.rejectionReasonFilter !== 'with_reason'"
-                  class="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold"
+              <!-- ── With/Without Reason toggle — always visible ── -->
+              <div class="flex items-center rounded-lg border border-input bg-muted p-0.5 gap-0.5">
+                <button
+                  @click="setReasonFilter('with_reason')"
+                  :class="[
+                    'rounded-md px-3 py-1 text-xs font-medium transition-all',
+                    localFilters.rejectionReasonFilter === 'with_reason'
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground',
+                  ]"
                 >
-                  Reason: {{ localFilters.rejectionReasonFilter === 'without_reason' ? 'Without Reason' : 'All' }}
-                </div>
+                  Rejected
+                </button>
+                <button
+                  @click="setReasonFilter('without_reason')"
+                  :class="[
+                    'rounded-md px-3 py-1 text-xs font-medium transition-all',
+                    localFilters.rejectionReasonFilter === 'without_reason'
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground',
+                  ]"
+                >
+                  Accepted
+                </button>
+                <button
+                  @click="setReasonFilter('all')"
+                  :class="[
+                    'rounded-md px-3 py-1 text-xs font-medium transition-all',
+                    localFilters.rejectionReasonFilter === 'all'
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground',
+                  ]"
+                >
+                  All
+                </button>
+              </div>
+
+              <!-- Active filter pills (when filters panel is collapsed) -->
+              <div v-if="!showFilters && hasActiveFilters" class="flex flex-wrap gap-2">
+                <span v-if="localFilters.search" class="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold">
+  Search: {{ localFilters.search }}
+</span>
+                <span v-if="localFilters.rejectionType" class="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold">
+                  Type: {{ rejectionTypeLabel(localFilters.rejectionType) }}
+                </span>
+                <span v-if="localFilters.rejectionBucket" class="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold">
+                  Bucket: {{ bucketLabel(localFilters.rejectionBucket) }}
+                </span>
+                <span v-if="localFilters.disputed" class="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold capitalize">
+                  Disputed: {{ localFilters.disputed }}
+                </span>
+                <span v-if="localFilters.carrierControllable" class="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold">
+                  Carrier: {{ localFilters.carrierControllable === 'true' ? 'Yes' : 'No' }}
+                </span>
+                <span v-if="localFilters.driverControllable" class="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold">
+                  Driver: {{ localFilters.driverControllable === 'true' ? 'Yes' : 'No' }}
+                </span>
+                <span v-if="localFilters.penaltyMin || localFilters.penaltyMax" class="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold">
+                  Penalty: {{ localFilters.penaltyMin || '0' }} – {{ localFilters.penaltyMax || '∞' }}
+                </span>
               </div>
             </div>
 
+            <!-- Right: Show/Hide toggle -->
             <Button variant="ghost" size="sm" @click="showFilters = !showFilters">
               {{ showFilters ? 'Hide Filters' : 'Show Filters' }}
               <Icon :name="showFilters ? 'chevron-up' : 'chevron-down'" class="ml-2 h-4 w-4" />
@@ -169,25 +208,47 @@
         <CardContent v-if="showFilters" class="p-2 md:p-4 lg:p-6">
           <div class="flex flex-col gap-3 md:gap-4">
 
-            <!-- Row 1: Search + Rejection Type -->
-            <div class="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 md:gap-4">
+            <!-- Row 1: Search + Rejection Type + Bucket -->
+            <div class="grid w-full grid-cols-1 gap-3 sm:grid-cols-3 md:gap-4">
               <div>
-                <Label for="search">Search (Driver Name)</Label>
-                <Input
-                  class="h-9 w-full lg:h-10"
-                  id="search"
-                  v-model="localFilters.search"
-                  type="text"
-                  placeholder="Search by driver name..."
-                />
-              </div>
+  <Label for="search">Search</Label>
+  <Input
+    class="h-9 w-full lg:h-10"
+    id="search"
+    v-model="localFilters.search"
+    type="text"
+    placeholder="Driver name, Block ID, Load ID..."
+  />
+</div>
               <div>
                 <Label for="rejectionType">Rejection Type</Label>
-                <select id="rejectionType" v-model="localFilters.rejectionType" class="select-base">
+                <select
+                  id="rejectionType"
+                  v-model="localFilters.rejectionType"
+                  class="select-base"
+                  @change="localFilters.rejectionBucket = ''"
+                >
                   <option value="">All Types</option>
                   <option value="advanced_block">Advanced Block</option>
                   <option value="block">Block</option>
                   <option value="load">Load</option>
+                </select>
+              </div>
+              <div>
+                <Label for="rejectionBucket">Rejection Bucket</Label>
+                <select id="rejectionBucket" v-model="localFilters.rejectionBucket" class="select-base">
+                  <option value="">All Buckets</option>
+                  <!-- Load buckets -->
+                  <template v-if="localFilters.rejectionType === 'load' || localFilters.rejectionType === ''">
+                    <option value="rejected_after_start_time">After Start Time</option>
+                    <option value="rejected_0_6_hours_before_start_time">0–6 Hours Before</option>
+                    <option value="rejected_6_plus_hours_before_start_time">6+ Hours Before</option>
+                  </template>
+                  <!-- Block buckets -->
+                  <template v-if="localFilters.rejectionType === 'block' || localFilters.rejectionType === ''">
+                    <option value="less_than_24">Less Than 24 Hours Before</option>
+                    <option value="more_than_24">24+ Hours Before</option>
+                  </template>
                 </select>
               </div>
             </div>
@@ -222,15 +283,29 @@
               </div>
             </div>
 
-            <!-- Row 3: Rejection Reason filter -->
+            <!-- Row 3: Penalty Range -->
             <div class="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 md:gap-4">
               <div>
-                <Label for="rejectionReasonFilter">Rejection Reason</Label>
-                <select id="rejectionReasonFilter" v-model="localFilters.rejectionReasonFilter" class="select-base">
-                  <option value="with_reason">With Reason Only</option>
-                  <option value="without_reason">Without Reason</option>
-                  <option value="all">All</option>
-                </select>
+                <Label for="penaltyMin">Penalty Min</Label>
+                <Input
+                  class="h-9 w-full lg:h-10"
+                  id="penaltyMin"
+                  v-model="localFilters.penaltyMin"
+                  type="number"
+                  min="0"
+                  placeholder="e.g. 0"
+                />
+              </div>
+              <div>
+                <Label for="penaltyMax">Penalty Max</Label>
+                <Input
+                  class="h-9 w-full lg:h-10"
+                  id="penaltyMax"
+                  v-model="localFilters.penaltyMax"
+                  type="number"
+                  min="0"
+                  placeholder="e.g. 100"
+                />
               </div>
             </div>
 
@@ -267,7 +342,6 @@
               <TableHeader>
                 <TableRow class="sticky top-0 z-10 border-b bg-background hover:bg-background">
 
-                  <!-- Checkbox -->
                   <TableHead class="w-[50px]" v-if="permissionNames.includes('acceptance.delete')">
                     <div class="flex items-center justify-center">
                       <input
@@ -279,10 +353,8 @@
                     </div>
                   </TableHead>
 
-                  <!-- Company (super admin) -->
                   <TableHead v-if="props.isSuperAdmin" class="whitespace-nowrap">Company</TableHead>
 
-                  <!-- Dynamic columns -->
                   <TableHead
                     v-for="col in visibleColumns"
                     :key="col.key"
@@ -307,7 +379,6 @@
                     </div>
                   </TableHead>
 
-                  <!-- Actions -->
                   <TableHead v-if="permissionNames.includes('acceptance.update') || permissionNames.includes('acceptance.delete')">
                     Actions
                   </TableHead>
@@ -315,7 +386,6 @@
               </TableHeader>
 
               <TableBody>
-                <!-- Empty state -->
                 <TableRow v-if="sortedRejections.length === 0">
                   <TableCell :colspan="totalColspan" class="py-8 text-center text-primary font-medium">
                     No rejections found matching your criteria
@@ -327,7 +397,6 @@
                   :key="rejection.id"
                   class="hover:bg-muted/50"
                 >
-                  <!-- Checkbox -->
                   <TableCell class="text-center" v-if="permissionNames.includes('acceptance.delete')">
                     <input
                       type="checkbox"
@@ -337,12 +406,10 @@
                     />
                   </TableCell>
 
-                  <!-- Company -->
                   <TableCell v-if="props.isSuperAdmin" class="whitespace-nowrap">
                     {{ rejection.tenant?.name || '—' }}
                   </TableCell>
 
-                  <!-- Dynamic cells -->
                   <TableCell
                     v-for="col in visibleColumns"
                     :key="col.key"
@@ -351,7 +418,6 @@
                     <CellValue :col="col.key" :rejection="rejection" />
                   </TableCell>
 
-                  <!-- Actions -->
                   <TableCell v-if="permissionNames.includes('acceptance.delete') || permissionNames.includes('acceptance.update')">
                     <div class="flex space-x-2">
                       <Button
@@ -416,7 +482,7 @@
         </CardContent>
       </Card>
 
-      <!-- ── Rejection Form Modal ── -->
+      <!-- Rejection Form Modal -->
       <Dialog v-model:open="formModal">
         <DialogContent class="max-w-[95vw] sm:max-w-[90vw] md:max-w-4xl">
           <DialogHeader class="px-4 sm:px-6">
@@ -439,7 +505,7 @@
         </DialogContent>
       </Dialog>
 
-      <!-- ── Bulk Delete Confirmation ── -->
+      <!-- Bulk Delete Confirmation -->
       <Dialog v-model:open="showDeleteSelectedModal">
         <DialogContent class="max-w-[95vw] sm:max-w-md">
           <DialogHeader class="px-4 sm:px-6">
@@ -456,7 +522,7 @@
         </DialogContent>
       </Dialog>
 
-      <!-- ── Single Delete Confirmation ── -->
+      <!-- Single Delete Confirmation -->
       <Dialog v-model:open="showDeleteModal">
         <DialogContent class="max-w-[95vw] sm:max-w-md">
           <DialogHeader class="px-4 sm:px-6">
@@ -472,7 +538,7 @@
         </DialogContent>
       </Dialog>
 
-      <!-- ── Import Modal (extracted component) ── -->
+      <!-- Import Modal -->
       <ImportRejectionModal
         v-model:open="showImportModal"
         :is-super-admin="props.isSuperAdmin"
@@ -487,20 +553,20 @@
 </template>
 
 <script setup>
-import { Head, useForm, usePage, router } from '@inertiajs/vue3';
+import { Head, useForm, router } from '@inertiajs/vue3';
 import { computed, defineComponent, h, onMounted, onUnmounted, ref, watch } from 'vue';
 
-import AcceptanceDashboard    from '@/components/acceptance/AcceptanceDashboard.vue';
-import ImportRejectionModal   from '@/components/acceptance/ImportRejectionModal.vue';
-import Icon                   from '@/components/Icon.vue';
-import RejectionForm          from '@/components/RejectionForm.vue';
+import AcceptanceDashboard  from '@/components/acceptance/AcceptanceDashboard.vue';
+import ImportRejectionModal from '@/components/acceptance/ImportRejectionModal.vue';
+import Icon                 from '@/components/Icon.vue';
+import RejectionForm        from '@/components/RejectionForm.vue';
 
 import { Alert, AlertDescription, AlertTitle }                                               from '@/components/ui/alert';
 import { Card, CardContent, CardHeader, CardTitle }                                          from '@/components/ui/card';
-import { Input }                                                                              from '@/components/ui/input';
-import { Label }                                                                              from '@/components/ui/label';
+import { Input }                                                                             from '@/components/ui/input';
+import { Label }                                                                             from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow }                     from '@/components/ui/table';
-import Button                                                                                 from '@/components/ui/button/Button.vue';
+import Button                                                                                from '@/components/ui/button/Button.vue';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import AppLayout from '@/layouts/AppLayout.vue';
 
@@ -523,8 +589,14 @@ const props = defineProps({
   filters: {
     type: Object,
     default: () => ({
-      search: '', rejectionType: '', disputed: '',
-      carrierControllable: '', driverControllable: '',
+      search:                '',
+      rejectionType:         '',
+      rejectionBucket:       '',
+      disputed:              '',
+      carrierControllable:   '',
+      driverControllable:    '',
+      penaltyMin:            '',
+      penaltyMax:            '',
       rejectionReasonFilter: 'with_reason',
     }),
   },
@@ -548,8 +620,18 @@ const showImportModal         = ref(false);
 const sortColumn              = ref('date');
 const sortDirection           = ref('desc');
 
-// Local filters (never mutate props directly)
-const localFilters = ref({ ...props.filters });
+// Local filters — hydrated from props so they survive page refreshes
+const localFilters = ref({
+  search:                props.filters?.search                ?? '',
+  rejectionType:         props.filters?.rejectionType         ?? '',
+  rejectionBucket:       props.filters?.rejectionBucket       ?? '',
+  disputed:              props.filters?.disputed              ?? '',
+  carrierControllable:   props.filters?.carrierControllable   ?? '',
+  driverControllable:    props.filters?.driverControllable    ?? '',
+  penaltyMin:            props.filters?.penaltyMin            ?? '',
+  penaltyMax:            props.filters?.penaltyMax            ?? '',
+  rejectionReasonFilter: props.filters?.rejectionReasonFilter ?? 'with_reason',
+});
 
 // ─── Breadcrumbs ──────────────────────────────────────────────────────────────
 const breadcrumbs = [
@@ -586,13 +668,23 @@ function rejectionTypeLabel(type) {
 
 function bucketLabel(bucket) {
   const map = {
-    advanced_rejection:                      'Advanced Rejection',
     more_than_24:                            '24+ hours before start',
-    after_start:                             'Rejected after start time',
     less_than_24:                            'Less than 24 hours before start',
     rejected_after_start_time:               'Rejected after start time',
     rejected_0_6_hours_before_start_time:    'Rejected 0–6 hours before start',
     rejected_6_plus_hours_before_start_time: 'Rejected 6+ hours before start',
+  };
+  return map[bucket] ?? bucket ?? '—';
+}
+
+// Short label used in filter pills
+function bucketPillLabel(bucket) {
+  const map = {
+    more_than_24:                            '24+ Hours Before',
+    less_than_24:                            '< 24 Hours Before',
+    rejected_after_start_time:               'After Start Time',
+    rejected_0_6_hours_before_start_time:    '0–6 Hours Before',
+    rejected_6_plus_hours_before_start_time: '6+ Hours Before',
   };
   return map[bucket] ?? bucket ?? '—';
 }
@@ -633,7 +725,9 @@ const ALL_COLUMNS = [
         load:           'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
         unknown:        'bg-muted text-muted-foreground',
       }[type] ?? 'bg-muted text-muted-foreground';
-      return h('span', { class: `inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${cls}` }, rejectionTypeLabel(type));
+      return h('span', {
+        class: `inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${cls}`,
+      }, rejectionTypeLabel(type));
     },
   },
   {
@@ -653,7 +747,9 @@ const ALL_COLUMNS = [
         won:     'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
         lost:    'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
       }[r.disputed] ?? 'bg-muted text-muted-foreground';
-      return h('span', { class: `inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize ${cls}` }, r.disputed || 'none');
+      return h('span', {
+        class: `inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize ${cls}`,
+      }, r.disputed || 'none');
     },
   },
   {
@@ -673,25 +769,31 @@ const ALL_COLUMNS = [
   },
 
   // ── Advanced Block ──
-  { key: 'ab_rejection_id',   label: 'Adv. Rejection ID', shared: false, getValue: r => ab(r)?.advance_block_rejection_id || null },
-  { key: 'ab_week_start',     label: 'Week Start',         shared: false, getValue: r => ab(r)?.week_start   ? formatDate(ab(r).week_start)   : null },
-  { key: 'ab_week_end',       label: 'Week End',           shared: false, getValue: r => ab(r)?.week_end     ? formatDate(ab(r).week_end)     : null },
-  { key: 'ab_impacted_blocks',label: 'Impacted Blocks',    shared: false, getValue: r => ab(r)?.impacted_blocks != null ? String(ab(r).impacted_blocks) : null },
-  { key: 'ab_expected_blocks',label: 'Expected Blocks',    shared: false, getValue: r => ab(r)?.expected_blocks != null ? String(ab(r).expected_blocks) : null },
+  { key: 'ab_rejection_id',    label: 'Adv. Rejection ID', shared: false, getValue: r => ab(r)?.advance_block_rejection_id ?? null },
+  { key: 'ab_week_start',      label: 'Week Start',         shared: false, getValue: r => ab(r)?.week_start    ? formatDate(ab(r).week_start)   : null },
+  { key: 'ab_week_end',        label: 'Week End',           shared: false, getValue: r => ab(r)?.week_end      ? formatDate(ab(r).week_end)     : null },
+  { key: 'ab_impacted_blocks', label: 'Impacted Blocks',    shared: false, getValue: r => ab(r)?.impacted_blocks != null ? String(ab(r).impacted_blocks) : null },
+  { key: 'ab_expected_blocks', label: 'Expected Blocks',    shared: false, getValue: r => ab(r)?.expected_blocks != null ? String(ab(r).expected_blocks) : null },
 
   // ── Block ──
-  { key: 'b_block_id',          label: 'Block ID',       shared: false, getValue: r => rb(r)?.block_id           || null },
-  { key: 'b_driver_name',       label: 'Driver Name',    shared: false, getValue: r => rb(r)?.driver_name        || null },
-  { key: 'b_block_start',       label: 'Block Start',    shared: false, getValue: r => rb(r)?.block_start        ? formatDateTime(rb(r).block_start)        : null },
-  { key: 'b_block_end',         label: 'Block End',      shared: false, getValue: r => rb(r)?.block_end          ? formatDateTime(rb(r).block_end)          : null },
-  { key: 'b_rejection_datetime',label: 'Rejection Time', shared: false, getValue: r => rb(r)?.rejection_datetime ? formatDateTime(rb(r).rejection_datetime) : null },
-  { key: 'b_rejection_bucket',  label: 'Bucket',         shared: false, getValue: r => rb(r)?.rejection_bucket   ? bucketLabel(rb(r).rejection_bucket)      : null },
+  { key: 'b_block_id',           label: 'Block ID',       shared: false, getValue: r => rb(r)?.block_id            ?? null },
+  { key: 'b_driver_name',        label: 'Driver Name',    shared: false, getValue: r => rb(r)?.driver_name         ?? null },
+  { key: 'b_block_start',        label: 'Block Start',    shared: false, getValue: r => rb(r)?.block_start         ? formatDateTime(rb(r).block_start)        : null },
+  { key: 'b_block_end',          label: 'Block End',      shared: false, getValue: r => rb(r)?.block_end           ? formatDateTime(rb(r).block_end)          : null },
+  { key: 'b_rejection_datetime', label: 'Rejection Time', shared: false, getValue: r => rb(r)?.rejection_datetime  ? formatDateTime(rb(r).rejection_datetime) : null },
+  {
+    key: 'b_rejection_bucket', label: 'Bucket', shared: false,
+    getValue: r => rb(r)?.rejection_bucket ? bucketLabel(rb(r).rejection_bucket) : null,
+  },
 
   // ── Load ──
-  { key: 'l_load_id',             label: 'Load ID',      shared: false, getValue: r => rl(r)?.load_id              || null },
-  { key: 'l_driver_name',         label: 'Driver Name',  shared: false, getValue: r => rl(r)?.driver_name          || null },
-  { key: 'l_origin_yard_arrival', label: 'Yard Arrival', shared: false, getValue: r => rl(r)?.origin_yard_arrival  ? formatDateTime(rl(r).origin_yard_arrival) : null },
-  { key: 'l_rejection_bucket',    label: 'Bucket',       shared: false, getValue: r => rl(r)?.rejection_bucket     ? bucketLabel(rl(r).rejection_bucket)       : null },
+  { key: 'l_load_id',             label: 'Load ID',      shared: false, getValue: r => rl(r)?.load_id             ?? null },
+  { key: 'l_driver_name',         label: 'Driver Name',  shared: false, getValue: r => rl(r)?.driver_name         ?? null },
+  { key: 'l_origin_yard_arrival', label: 'Yard Arrival', shared: false, getValue: r => rl(r)?.origin_yard_arrival ? formatDateTime(rl(r).origin_yard_arrival) : null },
+  {
+    key: 'l_rejection_bucket', label: 'Bucket', shared: false,
+    getValue: r => rl(r)?.rejection_bucket ? bucketLabel(rl(r).rejection_bucket) : null,
+  },
 ];
 
 // ─── Inline cell renderer ─────────────────────────────────────────────────────
@@ -710,7 +812,7 @@ const CellValue = defineComponent({
   },
 });
 
-// ─── Visible columns: hide columns empty across all shown rows ────────────────
+// ─── Visible columns ──────────────────────────────────────────────────────────
 const visibleColumns = computed(() => {
   const rows = sortedRejections.value;
   if (!rows.length) return ALL_COLUMNS.filter(c => c.shared);
@@ -725,9 +827,9 @@ const visibleColumns = computed(() => {
 
 const totalColspan = computed(() => {
   let n = visibleColumns.value.length;
-  if (props.isSuperAdmin)                                                                                        n += 1;
-  if (permissionNames.value.includes('acceptance.delete'))                                                       n += 1;
-  if (permissionNames.value.includes('acceptance.update') || permissionNames.value.includes('acceptance.delete')) n += 1;
+  if (props.isSuperAdmin)                                                                                          n += 1;
+  if (permissionNames.value.includes('acceptance.delete'))                                                         n += 1;
+  if (permissionNames.value.includes('acceptance.update') || permissionNames.value.includes('acceptance.delete'))  n += 1;
   return n;
 });
 
@@ -736,9 +838,9 @@ const sortedRejections = computed(() => {
   const rows = [...(props.rejections.data ?? [])];
   return rows.sort((a, b) => {
     const colDef = ALL_COLUMNS.find(c => c.key === sortColumn.value);
-    const valA = colDef ? (colDef.getValue(a) ?? '') : '';
-    const valB = colDef ? (colDef.getValue(b) ?? '') : '';
-    if (valA === '—' || valA === '') return 1;
+    const valA   = colDef ? (colDef.getValue(a) ?? '') : '';
+    const valB   = colDef ? (colDef.getValue(b) ?? '') : '';
+    if (valA === '—' || valA === '') return  1;
     if (valB === '—' || valB === '') return -1;
     const cmp = String(valA).toLowerCase() < String(valB).toLowerCase() ? -1
               : String(valA).toLowerCase() > String(valB).toLowerCase() ?  1 : 0;
@@ -764,10 +866,10 @@ const normalizedRejection = computed(() => {
     id:                   r.id,
     tenant_id:            r.tenant_id,
     date:                 r.date,
-    disputed:             r.disputed              ?? 'none',
+    disputed:             r.disputed             ?? 'none',
     carrier_controllable: r.carrier_controllable,
     driver_controllable:  r.driver_controllable,
-    rejection_reason:     r.rejection_reason      ?? '',
+    rejection_reason:     r.rejection_reason     ?? '',
     penalty:              r.penalty,
     type,
   };
@@ -776,11 +878,11 @@ const normalizedRejection = computed(() => {
     const s = ab(r);
     return {
       ...base,
-      advance_block_rejection_id: s?.advance_block_rejection_id  ?? '',
-      week_start:                 s?.week_start?.split(' ')[0]   ?? '',
-      week_end:                   s?.week_end?.split(' ')[0]     ?? '',
-      impacted_blocks:            s?.impacted_blocks             ?? '',
-      expected_blocks:            s?.expected_blocks             ?? '',
+      advance_block_rejection_id: s?.advance_block_rejection_id ?? '',
+      week_start:                 s?.week_start?.split(' ')[0]  ?? '',
+      week_end:                   s?.week_end?.split(' ')[0]    ?? '',
+      impacted_blocks:            s?.impacted_blocks            ?? '',
+      expected_blocks:            s?.expected_blocks            ?? '',
     };
   }
 
@@ -811,33 +913,80 @@ const normalizedRejection = computed(() => {
 });
 
 // ─── Filters ──────────────────────────────────────────────────────────────────
-const hasActiveFilters = computed(() => (
-  localFilters.value.search               ||
-  localFilters.value.rejectionType        ||
-  localFilters.value.disputed             ||
-  localFilters.value.carrierControllable  ||
-  localFilters.value.driverControllable   ||
-  (localFilters.value.rejectionReasonFilter && localFilters.value.rejectionReasonFilter !== 'with_reason')
-));
+const hasActiveFilters = computed(() =>
+  !!localFilters.value.search               ||
+  !!localFilters.value.rejectionType        ||
+  !!localFilters.value.rejectionBucket      ||
+  !!localFilters.value.disputed             ||
+  !!localFilters.value.carrierControllable  ||
+  !!localFilters.value.driverControllable   ||
+  !!localFilters.value.penaltyMin           ||
+  !!localFilters.value.penaltyMax           ||
+  (localFilters.value.rejectionReasonFilter !== 'with_reason')
+);
+
+// Bucket options are contextual based on selected rejection type
+const bucketOptions = computed(() => {
+  const type = localFilters.value.rejectionType;
+  const loadBuckets = [
+    { value: 'rejected_after_start_time',               label: 'After Start Time' },
+    { value: 'rejected_0_6_hours_before_start_time',    label: '0–6 Hours Before' },
+    { value: 'rejected_6_plus_hours_before_start_time', label: '6+ Hours Before' },
+  ];
+  const blockBuckets = [
+    { value: 'less_than_24', label: 'Less Than 24 Hours Before' },
+    { value: 'more_than_24', label: '24+ Hours Before' },
+  ];
+  if (type === 'load')  return loadBuckets;
+  if (type === 'block') return blockBuckets;
+  // 'all' or 'advanced_block' — show all applicable buckets grouped
+  return [...loadBuckets, ...blockBuckets];
+});
+
+// Clear bucket when type changes to avoid stale value
+watch(() => localFilters.value.rejectionType, () => {
+  localFilters.value.rejectionBucket = '';
+});
+
+function setReasonFilter(value) {
+  localFilters.value.rejectionReasonFilter = value;
+  getIndexRoute();
+}
 
 function getIndexRoute(extra = {}) {
   const routeName   = props.tenantSlug ? 'acceptance.index'       : 'acceptance.index.admin';
   const routeParams = props.tenantSlug ? { tenantSlug: props.tenantSlug } : {};
-  return router.get(route(routeName, routeParams), {
-    ...localFilters.value,
-    perPage:    localPerPage.value,
-    dateFilter: activeTab.value,
-    ...extra,
-  });
+  return router.get(
+    route(routeName, routeParams),
+    {
+      ...localFilters.value,
+      perPage:    localPerPage.value,
+      dateFilter: activeTab.value,
+      ...extra,
+    },
+    { preserveState: true, preserveScroll: true },
+  );
 }
 
-function applyFilters()                { getIndexRoute(); }
-function resetFilters()                {
-  localFilters.value = { search: '', rejectionType: '', disputed: '', carrierControllable: '', driverControllable: '', rejectionReasonFilter: 'with_reason' };
+function applyFilters()           { getIndexRoute(); }
+function selectDateFilter(filter) { activeTab.value = filter; getIndexRoute({ dateFilter: filter }); }
+function changePerPage()          { getIndexRoute(); }
+
+function resetFilters() {
+  localFilters.value = {
+    search:                '',
+    rejectionType:         '',
+    rejectionBucket:       '',
+    disputed:              '',
+    carrierControllable:   '',
+    driverControllable:    '',
+    penaltyMin:            '',
+    penaltyMax:            '',
+    rejectionReasonFilter: 'with_reason',
+  };
   getIndexRoute();
 }
-function selectDateFilter(filter)      { activeTab.value = filter; getIndexRoute({ dateFilter: filter }); }
-function changePerPage()               { getIndexRoute(); }
+
 function visitPage(url) {
   if (!url) return;
   const u = new URL(url);
@@ -862,32 +1011,43 @@ function openForm(rejection = null) {
   formModal.value = true;
 }
 function onFormSuccess() {
-  formModal.value = false;
+  formModal.value     = false;
   successMessage.value = selectedRejection.value
     ? 'Rejection updated successfully.'
     : 'Rejection created successfully.';
 }
 
 // ─── Delete single ────────────────────────────────────────────────────────────
-function confirmDeleteRejection(id) { rejectionToDelete.value = id; showDeleteModal.value = true; }
+function confirmDeleteRejection(id) {
+  rejectionToDelete.value = id;
+  showDeleteModal.value   = true;
+}
 function deleteRejection(id) {
   const f          = useForm({});
   const routeName  = props.isSuperAdmin ? 'acceptance.destroy.admin' : 'acceptance.destroy';
   const params     = props.isSuperAdmin ? { rejection: id } : { tenantSlug: props.tenantSlug, rejection: id };
   f.delete(route(routeName, params), {
     preserveScroll: true,
-    onSuccess: () => { successMessage.value = 'Rejection deleted successfully.'; showDeleteModal.value = false; },
+    onSuccess: () => {
+      successMessage.value    = 'Rejection deleted successfully.';
+      showDeleteModal.value   = false;
+    },
   });
 }
 
 // ─── Delete bulk ──────────────────────────────────────────────────────────────
 const isAllSelected = computed(() =>
-  sortedRejections.value.length > 0 && selectedRejections.value.length === sortedRejections.value.length
+  sortedRejections.value.length > 0 &&
+  selectedRejections.value.length === sortedRejections.value.length
 );
 function toggleSelectAll(e) {
-  selectedRejections.value = e.target.checked ? sortedRejections.value.map(r => r.id) : [];
+  selectedRejections.value = e.target.checked
+    ? sortedRejections.value.map(r => r.id)
+    : [];
 }
-function confirmDeleteSelected() { if (selectedRejections.value.length > 0) showDeleteSelectedModal.value = true; }
+function confirmDeleteSelected() {
+  if (selectedRejections.value.length > 0) showDeleteSelectedModal.value = true;
+}
 function deleteSelectedRejections() {
   const f         = useForm({ ids: selectedRejections.value });
   const routeName = props.isSuperAdmin ? 'acceptance.destroyBulk.admin' : 'acceptance.destroyBulk';
@@ -895,14 +1055,14 @@ function deleteSelectedRejections() {
   f.delete(route(routeName, params), {
     preserveScroll: true,
     onSuccess: () => {
-      successMessage.value = `${selectedRejections.value.length} records deleted.`;
-      selectedRejections.value = [];
+      successMessage.value         = `${selectedRejections.value.length} records deleted.`;
+      selectedRejections.value     = [];
       showDeleteSelectedModal.value = false;
     },
   });
 }
 
-// ─── Import callbacks (from ImportRejectionModal) ─────────────────────────────
+// ─── Import callbacks ─────────────────────────────────────────────────────────
 function onImportSuccess(message) { successMessage.value = message; }
 function onImportError(message)   { errorMessage.value   = message; }
 
@@ -957,7 +1117,7 @@ const acceptanceChartData = computed(() => {
 watch(successMessage, v => { if (v) setTimeout(() => { successMessage.value = ''; }, 5000); });
 watch(errorMessage,   v => { if (v) setTimeout(() => { errorMessage.value   = ''; }, 5000); });
 
-// ─── Prevent native drag-over default (for table drag targets) ────────────────
+// ─── Drag-over prevention ─────────────────────────────────────────────────────
 onMounted(() => {
   const preventDefault = (e) => e.preventDefault();
   window.addEventListener('dragover', preventDefault);

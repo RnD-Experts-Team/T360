@@ -45,7 +45,7 @@ class RejectionService
      */
     public function getRejectionsIndex(): array
     {
-        $user        = Auth::user();
+        $user         = Auth::user();
         $isSuperAdmin = is_null($user->tenant_id);
 
         $dateFilter = $this->filteringService->getDateFilter();
@@ -57,12 +57,13 @@ class RejectionService
             'rejectedBlock',
             'advancedRejectedBlock',
         ]);
+
         $dateRange = [];
         $query = $this->filteringService->applyDateFilter($query, $dateFilter, 'date', $dateRange);
 
         $request = request();
 
-        // --- rejection_reason filter (default: only with reason) ---
+        // --- Rejection reason filter (default: only with reason) ---
         $reasonFilter = $request->input('rejectionReasonFilter', 'with_reason');
         if ($reasonFilter === 'with_reason') {
             $query->whereNotNull('rejection_reason')->where('rejection_reason', '!=', '');
@@ -73,7 +74,7 @@ class RejectionService
         }
         // 'all' → no filter
 
-        // --- Type filter: derived from existence in sub-tables ---
+        // --- Type filter ---
         if ($request->filled('rejectionType')) {
             $type = $request->input('rejectionType');
             if ($type === 'advanced_block') {
@@ -85,15 +86,46 @@ class RejectionService
             }
         }
 
-        // --- Driver name search across sub-tables ---
+        // --- Rejection bucket filter ---
+        // Applies to the matching sub-table depending on rejection type
+        if ($request->filled('rejectionBucket')) {
+            $bucket = $request->input('rejectionBucket');
+            $type   = $request->input('rejectionType', '');
+
+            if ($type === 'load' || $type === '') {
+                $query->whereHas('rejectedLoad', function ($sq) use ($bucket) {
+                    $sq->where('rejection_bucket', $bucket);
+                });
+            } elseif ($type === 'block') {
+                $query->whereHas('rejectedBlock', function ($sq) use ($bucket) {
+                    $sq->where('rejection_bucket', $bucket);
+                });
+            }
+        }
+
+        // --- Driver name search across sub-tables and ID search---
         if ($request->filled('search')) {
             $search = strtolower($request->input('search'));
+
             $query->where(function ($q) use ($search) {
-                $q->whereHas('rejectedBlocks', function ($sq) use ($search) {
-                    $sq->whereRaw('LOWER(driver_name) LIKE ?', ["%{$search}%"]);
-                })->orWhereHas('rejectedLoads', function ($sq) use ($search) {
-                    $sq->whereRaw('LOWER(driver_name) LIKE ?', ["%{$search}%"]);
-                });
+                // Rejected blocks — driver name OR block ID
+                $q->whereHas('rejectedBlock', function ($sq) use ($search) {
+                    $sq->where(function ($inner) use ($search) {
+                        $inner->whereRaw('LOWER(driver_name) LIKE ?', ["%{$search}%"])
+                            ->orWhereRaw('LOWER(block_id) LIKE ?',  ["%{$search}%"]);
+                    });
+                })
+                    // Rejected loads — driver name OR load ID
+                    ->orWhereHas('rejectedLoad', function ($sq) use ($search) {
+                        $sq->where(function ($inner) use ($search) {
+                            $inner->whereRaw('LOWER(driver_name) LIKE ?', ["%{$search}%"])
+                                ->orWhereRaw('LOWER(load_id) LIKE ?',   ["%{$search}%"]);
+                        });
+                    })
+                    // Advanced blocks — advance block rejection ID
+                    ->orWhereHas('advancedRejectedBlock', function ($sq) use ($search) {
+                        $sq->whereRaw('LOWER(advance_block_rejection_id) LIKE ?', ["%{$search}%"]);
+                    });
             });
         }
 
@@ -112,7 +144,15 @@ class RejectionService
             $query->where('driver_controllable', filter_var($request->input('driverControllable'), FILTER_VALIDATE_BOOLEAN));
         }
 
-        // --- Tenant filter for non-super-admin ---
+        // --- Penalty range filter ---
+        if ($request->filled('penaltyMin')) {
+            $query->where('penalty', '>=', (float) $request->input('penaltyMin'));
+        }
+        if ($request->filled('penaltyMax')) {
+            $query->where('penalty', '<=', (float) $request->input('penaltyMax'));
+        }
+
+        // --- Tenant filter (only on rejections table) ---
         if (!$isSuperAdmin) {
             $query->where('tenant_id', $user->tenant_id);
         } elseif ($request->filled('tenant_id')) {
@@ -154,11 +194,14 @@ class RejectionService
         );
 
         $filters = [
-            'search'               => (string) $request->input('search', ''),
-            'rejectionType'        => (string) $request->input('rejectionType', ''),
-            'disputed'             => (string) $request->input('disputed', ''),
-            'carrierControllable'  => (string) $request->input('carrierControllable', ''),
-            'driverControllable'   => (string) $request->input('driverControllable', ''),
+            'search'                => (string) $request->input('search', ''),
+            'rejectionType'         => (string) $request->input('rejectionType', ''),
+            'rejectionBucket'       => (string) $request->input('rejectionBucket', ''),
+            'disputed'              => (string) $request->input('disputed', ''),
+            'carrierControllable'   => (string) $request->input('carrierControllable', ''),
+            'driverControllable'    => (string) $request->input('driverControllable', ''),
+            'penaltyMin'            => (string) $request->input('penaltyMin', ''),
+            'penaltyMax'            => (string) $request->input('penaltyMax', ''),
             'rejectionReasonFilter' => (string) $request->input('rejectionReasonFilter', 'with_reason'),
         ];
 
@@ -183,6 +226,7 @@ class RejectionService
             'permissions'         => $permissions,
         ];
     }
+
 
     /**
      * Get the week‐of‐year for a Carbon date, where weeks run Sunday → Saturday.
