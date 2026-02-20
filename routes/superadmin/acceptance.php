@@ -8,8 +8,6 @@ Route::controller(RejectionsController::class)->group(function () {
     Route::prefix('acceptance')->group(function () {
         Route::get('/', 'index')->name('acceptance.index.admin');
         Route::post('/', 'store')->name('acceptance.store.admin');
-        Route::put('{rejection}', 'updateAdmin')->name('acceptance.update.admin');
-        Route::delete('{rejection}', 'destroyAdmin')->name('acceptance.destroy.admin');
         Route::delete('-bulk', 'destroyBulkAdmin')->name('acceptance.destroyBulk.admin');
 
         // Import and export actions for superadmin
@@ -35,5 +33,7 @@ Route::controller(RejectionsController::class)->group(function () {
             ->name('acceptance.downloadErrorReport.admin');
 
         Route::get('/export', 'exportAdmin')->name('acceptance.export.admin');
+        Route::put('{rejection}', 'updateAdmin')->name('acceptance.update.admin');
+        Route::delete('{rejection}', 'destroyAdmin')->name('acceptance.destroy.admin');
     });
 });

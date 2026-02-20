@@ -15,15 +15,6 @@ Route::controller(RejectionsController::class)
         Route::post('/', 'store')
             ->name('store')
             ->middleware('permission:acceptance.create');
-
-        Route::put('{rejection}', 'update')
-            ->name('update')
-            ->middleware('permission:acceptance.update');
-
-        Route::delete('{rejection}', 'destroy')
-            ->name('destroy')
-            ->middleware('permission:acceptance.delete');
-
         Route::delete('-bulk', 'destroyBulk')
             ->name('destroyBulk')
             ->middleware('permission:acceptance.delete');
@@ -60,4 +51,11 @@ Route::controller(RejectionsController::class)
         Route::get('/export', 'export')
             ->name('export')
             ->middleware('permission:acceptance.export');
+        Route::put('{rejection}', 'update')
+            ->name('update')
+            ->middleware('permission:acceptance.update');
+
+        Route::delete('{rejection}', 'destroy')
+            ->name('destroy')
+            ->middleware('permission:acceptance.delete');
     });

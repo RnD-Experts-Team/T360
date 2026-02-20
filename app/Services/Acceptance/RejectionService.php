@@ -53,11 +53,10 @@ class RejectionService
 
         $query = Rejection::with([
             'tenant',
-            'rejectedBlocks',
-            'rejectedLoads',
-            'advancedRejectedBlocks',
+            'rejectedLoad',
+            'rejectedBlock',
+            'advancedRejectedBlock',
         ]);
-
         $dateRange = [];
         $query = $this->filteringService->applyDateFilter($query, $dateFilter, 'date', $dateRange);
 
@@ -263,9 +262,9 @@ class RejectionService
         ]);
 
         // Remove old sub-records and recreate
-        $rejection->advancedRejectedBlocks()->delete();
-        $rejection->rejectedBlocks()->delete();
-        $rejection->rejectedLoads()->delete();
+        $rejection->advancedRejectedBlock()->delete();
+        $rejection->rejectedBlock()->delete();
+        $rejection->rejectedLoad()->delete();
 
         $this->createSubRecord($rejection, $type, $data);
     }
@@ -295,7 +294,6 @@ class RejectionService
         if (empty($ids)) {
             return;
         }
-
         $query = Rejection::whereIn('id', $ids);
 
         $user = Auth::user();
@@ -341,15 +339,15 @@ class RejectionService
     private function createSubRecord(Rejection $rejection, string $type, array $data): void
     {
         if ($type === 'advanced_block') {
-            $rejection->advancedRejectedBlocks()->create([
+            $rejection->advancedRejectedBlock()->create([
                 'week_start'      => $data['week_start'],
                 'week_end'        => $data['week_end'],
                 'impacted_blocks' => $data['impacted_blocks'],
                 'expected_blocks' => $data['expected_blocks'],
-                'advanced_block_rejection_id' => $data['advance_block_rejection_id'],
+                'advance_block_rejection_id' => $data['advance_block_rejection_id'],
             ]);
         } elseif ($type === 'block') {
-            $rejection->rejectedBlocks()->create([
+            $rejection->rejectedBlock()->create([
                 'driver_name'        => $data['block_driver_name'] ?? null,
                 'block_start'        => $data['block_start'],
                 'block_end'          => $data['block_end'],
@@ -361,7 +359,7 @@ class RejectionService
                 'block_id' => $data['block_id'],
             ]);
         } elseif ($type === 'load') {
-            $rejection->rejectedLoads()->create([
+            $rejection->rejectedLoad()->create([
                 'driver_name'          => $data['load_driver_name'] ?? null,
                 'origin_yard_arrival'  => $data['origin_yard_arrival'],
                 'rejection_bucket'     => $data['load_rejection_bucket'],
