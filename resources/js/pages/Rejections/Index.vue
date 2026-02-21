@@ -1347,22 +1347,31 @@ function visitPage(url) {
 
 // ─── Week number text ─────────────────────────────────────────────────────────
 const weekNumberText = computed(() => {
-  if (
-    ["yesterday", "current-week"].includes(activeTab.value) &&
-    props.weekNumber &&
-    props.year
-  )
-    return `Week ${props.weekNumber}, ${props.year}`;
+  const { year, weekNumber, startWeekNumber, endWeekNumber } = props;
+
+  // Yesterday / current-week
+  if (["yesterday", "current-week"].includes(activeTab.value) && weekNumber && year) {
+    return `Week ${weekNumber}, ${year}`;
+  }
+
+  // 6w / quarterly
   if (
     ["6w", "quarterly"].includes(activeTab.value) &&
-    props.startWeekNumber &&
-    props.endWeekNumber &&
-    props.year
-  )
-    return `Weeks ${props.startWeekNumber}–${props.endWeekNumber}, ${props.year}`;
+    startWeekNumber &&
+    endWeekNumber &&
+    year
+  ) {
+    // ✅ Cross-year case
+    if (startWeekNumber > endWeekNumber) {
+      return `Weeks ${startWeekNumber}–${endWeekNumber} (${year}–${year + 1})`;
+    }
+
+    // Normal same-year case
+    return `Weeks ${startWeekNumber}–${endWeekNumber}, ${year}`;
+  }
+
   return "";
 });
-
 // ─── Permissions ──────────────────────────────────────────────────────────────
 const permissionNames = computed(() => props.permissions.map((p) => p.name));
 
