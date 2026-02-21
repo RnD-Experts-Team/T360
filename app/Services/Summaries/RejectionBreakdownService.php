@@ -13,21 +13,51 @@ class RejectionBreakdownService
      */
     public function getRejectionsByDriver($startDate, $endDate)
     {
-        $query = DB::table('rejections')
+        // Blocks
+        $blockQuery = DB::table('rejections')
+            ->join('rejected_blocks', 'rejected_blocks.rejection_id', '=', 'rejections.id')
             ->selectRaw("
-                driver_name,
-                COUNT(*) as total_rejections,
-                SUM(penalty) as total_penalty,
-                SUM(CASE WHEN rejection_type = 'block' THEN 1 ELSE 0 END) as total_block_rejections,
-                SUM(CASE WHEN rejection_type = 'block' THEN penalty ELSE 0 END) as total_block_penalty,
-                SUM(CASE WHEN rejection_type = 'load' THEN 1 ELSE 0 END) as total_load_rejections,
-                SUM(CASE WHEN rejection_type = 'load' THEN penalty ELSE 0 END) as total_load_penalty
-            ")
-            ->whereBetween('date', [$startDate, $endDate]);
+            rejected_blocks.driver_name,
+            COUNT(*) as total_block_rejections,
+            SUM(rejections.penalty) as total_block_penalty
+        ")
+            ->whereBetween('rejections.date', [$startDate, $endDate])
+            ->where('rejections.driver_controllable', true);  // Add check for driver_controllable
 
-        $this->applyTenantFilter($query);
+        $this->applyTenantFilter($blockQuery, 'rejections');
+        $blockResults = $blockQuery->groupBy('rejected_blocks.driver_name')->get()->keyBy('driver_name');
 
-        return $query->groupBy('driver_name')->get();
+        // Loads
+        $loadQuery = DB::table('rejections')
+            ->join('rejected_loads', 'rejected_loads.rejection_id', '=', 'rejections.id')
+            ->selectRaw("
+            rejected_loads.driver_name,
+            COUNT(*) as total_load_rejections,
+            SUM(rejections.penalty) as total_load_penalty
+        ")
+            ->whereBetween('rejections.date', [$startDate, $endDate])
+            ->where('rejections.driver_controllable', true);  // Add check for driver_controllable
+
+        $this->applyTenantFilter($loadQuery, 'rejections');
+        $loadResults = $loadQuery->groupBy('rejected_loads.driver_name')->get()->keyBy('driver_name');
+
+        // Merge
+        $allDrivers = $blockResults->keys()->merge($loadResults->keys())->unique();
+
+        return $allDrivers->map(function ($driverName) use ($blockResults, $loadResults) {
+            $block = $blockResults->get($driverName);
+            $load  = $loadResults->get($driverName);
+
+            return (object) [
+                'driver_name'            => $driverName,
+                'total_rejections'       => ($block->total_block_rejections ?? 0) + ($load->total_load_rejections ?? 0),
+                'total_penalty'          => ($block->total_block_penalty ?? 0) + ($load->total_load_penalty ?? 0),
+                'total_block_rejections' => $block->total_block_rejections ?? 0,
+                'total_block_penalty'    => $block->total_block_penalty ?? 0,
+                'total_load_rejections'  => $load->total_load_rejections ?? 0,
+                'total_load_penalty'     => $load->total_load_penalty ?? 0,
+            ];
+        })->values();
     }
 
     /**
@@ -36,63 +66,103 @@ class RejectionBreakdownService
     public function getRejectionsByReason($startDate, $endDate)
     {
         $query = DB::table('rejections')
-            ->join('rejection_reason_codes', 'rejections.reason_code_id', '=', 'rejection_reason_codes.id')
             ->selectRaw("
-                rejection_reason_codes.reason_code,
-                COUNT(*) as total_rejections,
-                SUM(rejections.penalty) as total_penalty,
-                SUM(CASE WHEN rejections.rejection_type = 'block' THEN 1 ELSE 0 END) as total_block_rejections,
-                SUM(CASE WHEN rejections.rejection_type = 'block' THEN rejections.penalty ELSE 0 END) as total_block_penalty,
-                SUM(CASE WHEN rejections.rejection_type = 'load' THEN 1 ELSE 0 END) as total_load_rejections,
-                SUM(CASE WHEN rejections.rejection_type = 'load' THEN rejections.penalty ELSE 0 END) as total_load_penalty
-            ")
-            ->whereBetween('rejections.date', [$startDate, $endDate]);
+            rejection_reason,
+            COUNT(*) as total_rejections,
+            SUM(penalty) as total_penalty
+        ")
+            ->whereNotNull('rejection_reason')
+            ->where('rejection_reason', '!=', '')
+            ->whereBetween('date', [$startDate, $endDate]);
 
-        $this->applyTenantFilter($query, 'rejections');
+        $this->applyTenantFilter($query);
 
-        return $query->groupBy('rejection_reason_codes.reason_code')->get();
+        return $query->groupBy('rejection_reason')->get();
     }
+
 
     /**
      * Get count of all rejections and breakdown by rejection category
      */
     public function getRejectionsCategoryBreakdown($startDate, $endDate)
     {
-        $query = DB::table('rejections')
+        // Total rejections and penalty
+        $totalQuery = DB::table('rejections')
+            ->selectRaw("COUNT(*) as total_rejections, SUM(penalty) as total_penalty")
+            ->whereBetween('date', [$startDate, $endDate])
+            ->where('driver_controllable', true);  // Add check for driver_controllable
+
+        $this->applyTenantFilter($totalQuery);
+        $total = $totalQuery->first();
+
+        // Advanced blocks breakdown
+        $advancedQuery = DB::table('rejections')
+            ->join('advanced_rejected_blocks', 'advanced_rejected_blocks.rejection_id', '=', 'rejections.id')
+            ->selectRaw("COUNT(*) as advanced_rejection_count, SUM(rejections.penalty) as advanced_rejection_penalty")
+            ->whereBetween('rejections.date', [$startDate, $endDate])
+            ->where('rejections.driver_controllable', true);  // Add check for driver_controllable
+
+        $this->applyTenantFilter($advancedQuery, 'rejections');
+        $advanced = $advancedQuery->first();
+
+        // Blocks by bucket
+        $blockQuery = DB::table('rejections')
+            ->join('rejected_blocks', 'rejected_blocks.rejection_id', '=', 'rejections.id')
             ->selectRaw("
-                COUNT(*) as total_rejections,
-                SUM(CASE WHEN rejection_category = 'more_than_6' THEN 1 ELSE 0 END) as more_than_6_count,
-                SUM(CASE WHEN rejection_category = 'within_6' THEN 1 ELSE 0 END) as within_6_count,
-                SUM(CASE WHEN rejection_category = 'after_start' THEN 1 ELSE 0 END) as after_start_count,
-                SUM(CASE WHEN rejection_category = 'within_24' THEN 1 ELSE 0 END) as within_24_count,
-                SUM(CASE WHEN rejection_category = 'more_than_24' THEN 1 ELSE 0 END) as more_than_24_count,
-                SUM(CASE WHEN rejection_category = 'advanced_rejection' THEN 1 ELSE 0 END) as advanced_rejection_count,
-                
-                SUM(CASE WHEN rejection_category = 'more_than_6' AND rejection_type = 'block' THEN 1 ELSE 0 END) as more_than_6_block_count,
-                SUM(CASE WHEN rejection_category = 'more_than_6' AND rejection_type = 'load' THEN 1 ELSE 0 END) as more_than_6_load_count,
+            COUNT(*) as total_block_rejections,
+            SUM(CASE WHEN rejected_blocks.rejection_bucket = 'less_than_24' THEN 1 ELSE 0 END) as less_than_24_count,
+            SUM(CASE WHEN rejected_blocks.rejection_bucket = 'more_than_24' THEN 1 ELSE 0 END) as more_than_24_count,
+            SUM(CASE WHEN rejected_blocks.rejection_bucket = 'less_than_24' THEN rejections.penalty ELSE 0 END) as less_than_24_penalty,
+            SUM(CASE WHEN rejected_blocks.rejection_bucket = 'more_than_24' THEN rejections.penalty ELSE 0 END) as more_than_24_penalty
+        ")
+            ->whereBetween('rejections.date', [$startDate, $endDate])
+            ->where('rejections.driver_controllable', true);  // Add check for driver_controllable
 
-                SUM(CASE WHEN rejection_category = 'within_24' AND rejection_type = 'block' THEN 1 ELSE 0 END) as within_24_block_count,
-                SUM(CASE WHEN rejection_category = 'within_24' AND rejection_type = 'load' THEN 1 ELSE 0 END) as within_24_load_count,
+        $this->applyTenantFilter($blockQuery, 'rejections');
+        $blocks = $blockQuery->first();
 
-                SUM(CASE WHEN rejection_category = 'more_than_24' AND rejection_type = 'block' THEN 1 ELSE 0 END) as more_than_24_block_count,
-                SUM(CASE WHEN rejection_category = 'more_than_24' AND rejection_type = 'load' THEN 1 ELSE 0 END) as more_than_24_load_count,
-                
-                SUM(CASE WHEN rejection_category = 'advanced_rejection' AND rejection_type = 'block' THEN 1 ELSE 0 END) as advanced_rejection_block_count,
-                SUM(CASE WHEN rejection_category = 'advanced_rejection' AND rejection_type = 'load' THEN 1 ELSE 0 END) as advanced_rejection_load_count,
-                
-                SUM(CASE WHEN rejection_category = 'within_6' AND rejection_type = 'block' THEN 1 ELSE 0 END) as within_6_block_count,
-                SUM(CASE WHEN rejection_category = 'within_6' AND rejection_type = 'load' THEN 1 ELSE 0 END) as within_6_load_count,
-                
-                SUM(CASE WHEN rejection_category = 'after_start' AND rejection_type = 'block' THEN 1 ELSE 0 END) as after_start_block_count,
-                SUM(CASE WHEN rejection_category = 'after_start' AND rejection_type = 'load' THEN 1 ELSE 0 END) as after_start_load_count,
-                
-                SUM(CASE WHEN rejection_type = 'block' THEN 1 ELSE 0 END) as total_block_rejections,
-                SUM(CASE WHEN rejection_type = 'load' THEN 1 ELSE 0 END) as total_load_rejections
-               ")
-            ->whereBetween('date', [$startDate, $endDate]);
+        // Loads by bucket
+        $loadQuery = DB::table('rejections')
+            ->join('rejected_loads', 'rejected_loads.rejection_id', '=', 'rejections.id')
+            ->selectRaw("
+            COUNT(*) as total_load_rejections,
+            SUM(CASE WHEN rejected_loads.rejection_bucket = 'rejected_after_start_time' THEN 1 ELSE 0 END) as after_start_count,
+            SUM(CASE WHEN rejected_loads.rejection_bucket = 'rejected_0_6_hours_before_start_time' THEN 1 ELSE 0 END) as within_6_count,
+            SUM(CASE WHEN rejected_loads.rejection_bucket = 'rejected_6_plus_hours_before_start_time' THEN 1 ELSE 0 END) as more_than_6_count,
+            SUM(CASE WHEN rejected_loads.rejection_bucket = 'rejected_after_start_time' THEN rejections.penalty ELSE 0 END) as after_start_penalty,
+            SUM(CASE WHEN rejected_loads.rejection_bucket = 'rejected_0_6_hours_before_start_time' THEN rejections.penalty ELSE 0 END) as within_6_penalty,
+            SUM(CASE WHEN rejected_loads.rejection_bucket = 'rejected_6_plus_hours_before_start_time' THEN rejections.penalty ELSE 0 END) as more_than_6_penalty
+        ")
+            ->whereBetween('rejections.date', [$startDate, $endDate])
+            ->where('rejections.driver_controllable', true);  // Add check for driver_controllable
 
-            $this->applyTenantFilter($query);
-        return $query->first();
+        $this->applyTenantFilter($loadQuery, 'rejections');
+        $loads = $loadQuery->first();
+
+        return (object) [
+            'total_rejections'         => $total->total_rejections ?? 0,
+            'total_penalty'            => $total->total_penalty ?? 0,
+
+            // Advanced blocks
+            'advanced_rejection_count' => $advanced->advanced_rejection_count ?? 0,
+            'advanced_rejection_penalty' => $advanced->advanced_rejection_penalty ?? 0,
+
+            // Blocks
+            'total_block_rejections'   => $blocks->total_block_rejections ?? 0,
+            'less_than_24_count'       => $blocks->less_than_24_count ?? 0,
+            'more_than_24_count'       => $blocks->more_than_24_count ?? 0,
+            'less_than_24_penalty'     => $blocks->less_than_24_penalty ?? 0,
+            'more_than_24_penalty'     => $blocks->more_than_24_penalty ?? 0,
+
+            // Loads
+            'total_load_rejections'    => $loads->total_load_rejections ?? 0,
+            'after_start_count'         => $loads->after_start_count ?? 0,
+            'within_6_count'           => $loads->within_6_count ?? 0,
+            'more_than_6_count'        => $loads->more_than_6_count ?? 0,
+            'after_start_penalty'      => $loads->after_start_penalty ?? 0,
+            'within_6_penalty'         => $loads->within_6_penalty ?? 0,
+            'more_than_6_penalty'      => $loads->more_than_6_penalty ?? 0,
+        ];
     }
 
     /**
@@ -100,59 +170,59 @@ class RejectionBreakdownService
      */
     public function getBottomFiveDriversByPenalty($startDate, $endDate)
     {
-        // Get bottom five drivers by total penalty
-        $bottomFiveTotal = DB::table('rejections')
-            ->selectRaw("
-                driver_name,
-                SUM(penalty) as total_penalty
-            ")
-            ->whereBetween('date', [$startDate, $endDate]);
-            
-        $this->applyTenantFilter($bottomFiveTotal);
-        
-        $bottomFiveTotal = $bottomFiveTotal->groupBy('driver_name')
-            ->orderBy('total_penalty', 'desc')
-            ->limit(5)
-            ->get();
-            
-        // Get bottom five drivers by block penalty
+        // Total (blocks + loads combined)
+        $blockTotal = DB::table('rejections')
+            ->join('rejected_blocks', 'rejected_blocks.rejection_id', '=', 'rejections.id')
+            ->selectRaw("rejected_blocks.driver_name, SUM(rejections.penalty) as total_penalty")
+            ->whereBetween('rejections.date', [$startDate, $endDate]);
+        $this->applyTenantFilter($blockTotal, 'rejections');
+        $blockTotal = $blockTotal->groupBy('rejected_blocks.driver_name')->get()->keyBy('driver_name');
+
+        $loadTotal = DB::table('rejections')
+            ->join('rejected_loads', 'rejected_loads.rejection_id', '=', 'rejections.id')
+            ->selectRaw("rejected_loads.driver_name, SUM(rejections.penalty) as total_penalty")
+            ->whereBetween('rejections.date', [$startDate, $endDate]);
+        $this->applyTenantFilter($loadTotal, 'rejections');
+        $loadTotal = $loadTotal->groupBy('rejected_loads.driver_name')->get()->keyBy('driver_name');
+
+        $allDrivers = $blockTotal->keys()->merge($loadTotal->keys())->unique();
+        $combined = $allDrivers->map(function ($name) use ($blockTotal, $loadTotal) {
+            return (object) [
+                'driver_name'   => $name,
+                'total_penalty' => ($blockTotal->get($name)->total_penalty ?? 0)
+                    + ($loadTotal->get($name)->total_penalty ?? 0),
+            ];
+        })->sortByDesc('total_penalty')->take(5)->values();
+
+        // Bottom five by block penalty only
         $bottomFiveBlock = DB::table('rejections')
-            ->selectRaw("
-                driver_name,
-                SUM(CASE WHEN rejection_type = 'block' THEN penalty ELSE 0 END) as total_penalty
-            ")
-            ->whereBetween('date', [$startDate, $endDate])
-            ->where('rejection_type', 'block');
-            
-        $this->applyTenantFilter($bottomFiveBlock);
-        
-        $bottomFiveBlock = $bottomFiveBlock->groupBy('driver_name')
+            ->join('rejected_blocks', 'rejected_blocks.rejection_id', '=', 'rejections.id')
+            ->selectRaw("rejected_blocks.driver_name, SUM(rejections.penalty) as total_penalty")
+            ->whereBetween('rejections.date', [$startDate, $endDate]);
+        $this->applyTenantFilter($bottomFiveBlock, 'rejections');
+        $bottomFiveBlock = $bottomFiveBlock->groupBy('rejected_blocks.driver_name')
             ->orderBy('total_penalty', 'desc')
             ->limit(5)
             ->get();
-            
-        // Get bottom five drivers by load penalty
+
+        // Bottom five by load penalty only
         $bottomFiveLoad = DB::table('rejections')
-            ->selectRaw("
-                driver_name,
-                SUM(CASE WHEN rejection_type = 'load' THEN penalty ELSE 0 END) as total_penalty
-            ")
-            ->whereBetween('date', [$startDate, $endDate])
-            ->where('rejection_type', 'load');
-            
-        $this->applyTenantFilter($bottomFiveLoad);
-        
-        $bottomFiveLoad = $bottomFiveLoad->groupBy('driver_name')
+            ->join('rejected_loads', 'rejected_loads.rejection_id', '=', 'rejections.id')
+            ->selectRaw("rejected_loads.driver_name, SUM(rejections.penalty) as total_penalty")
+            ->whereBetween('rejections.date', [$startDate, $endDate]);
+        $this->applyTenantFilter($bottomFiveLoad, 'rejections');
+        $bottomFiveLoad = $bottomFiveLoad->groupBy('rejected_loads.driver_name')
             ->orderBy('total_penalty', 'desc')
             ->limit(5)
             ->get();
-            
+
         return [
-            'total' => $bottomFiveTotal,
+            'total' => $combined,
             'block' => $bottomFiveBlock,
-            'load' => $bottomFiveLoad
+            'load'  => $bottomFiveLoad,
         ];
     }
+
 
     /**
      * Apply tenant filter to query if user is authenticated
@@ -165,7 +235,7 @@ class RejectionBreakdownService
         }
     }
 
-   
+
     /**
      * Get complete rejection breakdown data for the specified date range
      */
@@ -176,6 +246,7 @@ class RejectionBreakdownService
             'by_reason' => $this->getRejectionsByReason($startDate, $endDate),
         ];
     }
+
 
     /**
      * Get rejection breakdown details for the details page
@@ -202,7 +273,7 @@ class RejectionBreakdownService
         $end = Carbon::parse($endDate);
         // Determine date filter type based on date range
         $dateFilter = $this->determineDateFilterType($start, $end);
-        
+
         // Determine grouping based on date filter type
         if ($dateFilter === 'yesterday') {
             // For yesterday, we'll show hourly data if available
@@ -230,25 +301,25 @@ class RejectionBreakdownService
         $averageQuery = DB::table('performances')
             ->selectRaw('AVG(acceptance) as averageAcceptance')
             ->whereBetween('date', [$startDate, $endDate]);
-        
+
         $this->applyTenantFilter($averageQuery);
         $averageResult = $averageQuery->first();
         $averageAcceptance = $averageResult ? round($averageResult->averageAcceptance, 1) : null;
-        
+
         $query = DB::table('performances')
             ->select($groupBy, DB::raw('AVG(acceptance) as acceptancePerformance'))
             ->whereBetween('date', [$startDate, $endDate])
             ->groupBy($groupBy)
             ->orderBy($groupBy);
-        
+
         $this->applyTenantFilter($query);
         $results = $query->get();
-        
+
         // Format dates based on the determined grouping
-        $chartData = $results->map(function($item) use ($dateFormat, $labelFormat, $dateFilter) {
+        $chartData = $results->map(function ($item) use ($dateFormat, $labelFormat, $dateFilter) {
             // Get the first property (date or yearweek)
             $dateValue = $item->{array_key_first((array)$item)};
-            
+
             if ($dateFormat === 'Y-m-d') {
                 // For daily grouping
                 $date = Carbon::parse($dateValue);
@@ -268,7 +339,7 @@ class RejectionBreakdownService
                 $week = substr($dateValue, 4);
                 $formattedDate = 'W' . $week;
             }
-            
+
             return [
                 'date' => $formattedDate,
                 'acceptancePerformance' => round($item->acceptancePerformance, 1)
@@ -279,7 +350,7 @@ class RejectionBreakdownService
             'averageAcceptance' => $averageAcceptance
         ];
     }
-    
+
     /**
      * Determine the date filter type based on the date range
      * 
@@ -292,7 +363,7 @@ class RejectionBreakdownService
         $daysDifference = $start->diffInDays($end);
         $now = Carbon::now();
         $isSunday = $now->dayOfWeek === 0;
-        if($isSunday){
+        if ($isSunday) {
             $now = $now->copy()->subDays(1);
         }
         $yesterday = Carbon::yesterday();
@@ -307,21 +378,21 @@ class RejectionBreakdownService
         if ($start->isSameDay($currentWeekStart) && $end->isSameDay($currentWeekEnd)) {
             return 'current-week';
         }
-        
+
         // Check if the date range matches 6 weeks
         if ($start->isSameDay($sixWeeksStart) && $end->isSameDay($currentWeekEnd)) {
             return '6w';
         }
-        
+
         // Check if the date range is approximately 3 months
         if ($daysDifference >= 85 && $daysDifference <= 95) {
             return 'quarterly';
         }
-        
+
         // Default to full if none of the above match
         return 'full';
     }
-    
+
     /**
      * Get complete rejection breakdown data with line chart for the specified date range
      */
@@ -330,7 +401,7 @@ class RejectionBreakdownService
         $basicData = $this->getRejectionBreakdown($startDate, $endDate);
         $detailsData = $this->getRejectionBreakdownDetailsPage($startDate, $endDate);
         $lineChartData = $this->getLineChartData($startDate, $endDate);
-        
+
         return array_merge(
             $basicData,
             $detailsData,

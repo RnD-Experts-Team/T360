@@ -15,26 +15,33 @@ Route::controller(RejectionsController::class)
         Route::post('/', 'store')
             ->name('store')
             ->middleware('permission:acceptance.create');
-
-        Route::put('{rejection}', 'update')
-            ->name('update')
-            ->middleware('permission:acceptance.update');
-
-        Route::delete('{rejection}', 'destroy')
-            ->name('destroy')
-            ->middleware('permission:acceptance.delete');
-
         Route::delete('-bulk', 'destroyBulk')
             ->name('destroyBulk')
             ->middleware('permission:acceptance.delete');
 
-        // NEW: Performance-style import flow
-        Route::post('/validate-import', 'validateImport')
-            ->name('validateImport')
+        // Import and export actions for users
+        Route::post('/validate-advanced-block-import', 'validateAdvancedBlockImport')
+            ->name('validateAdvancedBlockImport')
             ->middleware('permission:acceptance.import');
 
-        Route::post('/confirm-import', 'confirmImport')
-            ->name('confirmImport')
+        Route::post('/confirm-advanced-block-import', 'confirmAdvancedBlockImport')
+            ->name('confirmAdvancedBlockImport')
+            ->middleware('permission:acceptance.import');
+
+        Route::post('/validate-block-import', 'validateBlockImport')
+            ->name('validateBlockImport')
+            ->middleware('permission:acceptance.import');
+
+        Route::post('/confirm-block-import', 'confirmBlockImport')
+            ->name('confirmBlockImport')
+            ->middleware('permission:acceptance.import');
+
+        Route::post('/validate-load-import', 'validateLoadImport')
+            ->name('validateLoadImport')
+            ->middleware('permission:acceptance.import');
+
+        Route::post('/confirm-load-import', 'confirmLoadImport')
+            ->name('confirmLoadImport')
             ->middleware('permission:acceptance.import');
 
         Route::get('/download-error-report', 'downloadErrorReport')
@@ -44,4 +51,11 @@ Route::controller(RejectionsController::class)
         Route::get('/export', 'export')
             ->name('export')
             ->middleware('permission:acceptance.export');
+        Route::put('{rejection}', 'update')
+            ->name('update')
+            ->middleware('permission:acceptance.update');
+
+        Route::delete('{rejection}', 'destroy')
+            ->name('destroy')
+            ->middleware('permission:acceptance.delete');
     });

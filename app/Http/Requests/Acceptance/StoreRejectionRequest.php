@@ -4,7 +4,6 @@ namespace App\Http\Requests\Acceptance;
 
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Validation\Rule;
 
 class StoreRejectionRequest extends FormRequest
 {
@@ -15,50 +14,63 @@ class StoreRejectionRequest extends FormRequest
 
     public function rules()
     {
-        return [
-            'date'             => 'required|date',
-            'driver_name'      => 'required|string',
-            'rejection_type'   => 'required|in:block,load',
-            'rejection_category'=> [
-                'required',
-                function ($attribute, $value, $fail) {
-                    $type = $this->input('rejection_type');
-                    
-                    // Valid categories for block type
-                    $blockCategories = ['after_start', 'within_24', 'more_than_24', 'advanced_rejection'];
-                    // Valid categories for load type
-                    $loadCategories = ['after_start', 'within_6', 'more_than_6'];
-                    
-                    if ($type === 'block' && !in_array($value, $blockCategories)) {
-                        $fail('The rejection category is invalid for block type rejections.');
-                    }
-                    
-                    if ($type === 'load' && !in_array($value, $loadCategories)) {
-                        $fail('The rejection category is invalid for load type rejections.');
-                    }
-                },
-            ],
-            'reason_code_id'   => [
-                'required',
-                Rule::exists('rejection_reason_codes', 'id')->whereNull('deleted_at'),
-            ],
-            'disputed'         => 'required|boolean',
-            'driver_controllable' => 'nullable|boolean',
-            'tenant_id' => 'required|exists:tenants,id',
+        $rules = [
+            'tenant_id'            => 'required|exists:tenants,id',
+            'date'                 => 'required|date',
+            'disputed'             => 'required|in:none,pending,won,lost',
+            'carrier_controllable' => 'required|boolean',
+            'driver_controllable'  => 'required|boolean',
+            'rejection_reason'     => 'nullable|string|max:255',
+            'type'                 => 'required|in:advanced_block,block,load',
         ];
+
+        $type = $this->input('type');
+
+        if ($type === 'advanced_block') {
+            $rules += [
+                'advance_block_rejection_id' => 'required|string|max:255|unique:advanced_rejected_blocks,advance_block_rejection_id',
+                'week_start'      => 'required|date',
+                'week_end'        => 'required|date|after_or_equal:week_start',
+                'impacted_blocks' => 'required|integer|min:0',
+                'expected_blocks' => 'required|integer|min:0',
+            ];
+        }
+
+        if ($type === 'block') {
+            $rules += [
+                'block_id'          => 'required|string|max:255|unique:rejected_blocks,block_id',
+                'block_driver_name' => 'nullable|string|max:255',
+                'block_start'       => 'required|date',
+                'block_end'         => 'required|date|after_or_equal:block_start',
+                'rejection_datetime' => 'nullable|date',
+            ];
+        }
+
+        if ($type === 'load') {
+            $rules += [
+                'load_id'              => 'required|string|max:255|unique:rejected_loads,load_id',
+                'load_driver_name'     => 'nullable|string|max:255',
+                'origin_yard_arrival'  => 'required|date',
+                'load_rejection_bucket' => 'nullable|in:rejected_after_start_time,rejected_0_6_hours_before_start_time,rejected_6_plus_hours_before_start_time',
+            ];
+        }
+
+        return $rules;
     }
 
     protected function prepareForValidation()
     {
+        // Only inject tenant_id for non-super-admin users
         if (!is_null(Auth::user()->tenant_id)) {
             $this->merge(['tenant_id' => Auth::user()->tenant_id]);
         }
     }
-    
+
     public function messages()
     {
         return [
-            'rejection_category.required' => 'The rejection category field is required.',
+            'type.required' => 'A rejection type (advanced_block, block, or load) is required.',
+            'type.in'       => 'Rejection type must be advanced_block, block, or load.',
         ];
     }
 }

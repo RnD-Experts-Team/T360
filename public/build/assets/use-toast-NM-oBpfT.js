@@ -1,0 +1,1 @@
+import{c as u,r}from"./vendor-cgn9wV4E.js";const s=r([]);function c(){const n=o=>{const t=Math.random().toString(36).substring(2,9),e={id:t,...o,duration:o.duration||5e3};return s.value=[...s.value,e],setTimeout(()=>{a(t)},e.duration),t},a=o=>{s.value=s.value.filter(t=>t.id!==o)};return{toasts:u(()=>s.value),toast:n,dismissToast:a}}export{c as u};

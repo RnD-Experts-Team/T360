@@ -1,0 +1,1 @@
+import{d as a,L as t,e as s,X as n,k as r,U as o}from"./vendor-cgn9wV4E.js";const i={class:"mb-0.5 text-base font-medium"},c={key:0,class:"text-sm text-muted-foreground"},l=a({__name:"HeadingSmall",props:{title:{},description:{}},setup(d){return(e,m)=>(s(),t("header",null,[n("h3",i,o(e.title),1),e.description?(s(),t("p",c,o(e.description),1)):r("",!0)]))}});export{l as _};

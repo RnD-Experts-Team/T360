@@ -2,67 +2,111 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use App\Models\Scopes\TenantScope;
 use Illuminate\Support\Facades\Auth;
+use App\Models\Scopes\TenantScope;
 
-/**
- * Class Rejection
- *
- * Represents a rejection event with details such as type, penalty, and associated reason code.
- *
- * Properties:
- * - rejection_type: Either 'block' or 'load'.
- * - rejection_category: Indicates timing of rejection (more_than_6, within_6, after_start).
- * - penalty: The numeric penalty associated.
- *
- * Relationships:
- * - Belongs to a Tenant.
- * - Belongs to a RejectionReasonCode.
- */
 class Rejection extends Model
 {
+    use HasFactory;
+
     protected $fillable = [
         'tenant_id',
         'date',
-        'rejection_type',
-        'driver_name',
-        'rejection_category',
         'penalty',
-        'reason_code_id',
         'disputed',
-        'driver_controllable'
+        'carrier_controllable',
+        'driver_controllable',
+        'rejection_reason',
     ];
 
     /**
-     * Get the rejection reason code associated with the rejection.
-     *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     * Internal flag to skip controllable enforcement.
+     * Not persisted to DB.
      */
-    public function reasonCode()
+    protected bool $skipControllableEnforcement = false;
+
+    /**
+     * Public method to explicitly disable enforcement.
+     * Keeps service layer clean and expressive.
+     */
+    public function skipControllableEnforcement(): self
     {
-        return $this->belongsTo(RejectionReasonCode::class);
+        $this->skipControllableEnforcement = true;
+        return $this;
+    }
+
+    /**
+     * Get the advanced rejected block for this rejection.
+     */
+    public function advancedRejectedBlock()
+    {
+        return $this->hasMany(AdvancedRejectedBlock::class);
+    }
+
+    /**
+     * Get the rejected block for this rejection.
+     */
+    public function rejectedBlock()
+    {
+        return $this->hasMany(RejectedBlock::class);
+    }
+
+    /**
+     * Get the rejected load for this rejection.
+     */
+    public function rejectedLoad()
+    {
+        return $this->hasMany(RejectedLoad::class);
     }
 
     /**
      * Get the tenant associated with the rejection.
-     *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
      */
     public function tenant()
     {
         return $this->belongsTo(Tenant::class);
     }
 
-    /**
-     * Boot the model and apply the TenantScope if a user is authenticated.
-     *
-     * @return void
-     */
     protected static function booted()
     {
         if (Auth::check()) {
             static::addGlobalScope(new TenantScope);
         }
+
+        // Automatically adjust 'driver_controllable' and 'carrier_controllable' before saving or updating
+        static::saving(function (Rejection $rejection) {
+
+            // 🚫 Skip enforcement if explicitly disabled
+            if ($rejection->skipControllableEnforcement) {
+                return true;
+            }
+
+            if (empty($rejection->rejection_reason)) {
+                return true;
+            }
+
+            if (preg_match('/amazon/i', $rejection->rejection_reason)) {
+                $rejection->driver_controllable  = false;
+                $rejection->carrier_controllable = false;
+                return true;
+            }
+
+            if (
+                preg_match('/mechanical[_]?trailer/i', $rejection->rejection_reason) ||
+                preg_match('/weather/i', $rejection->rejection_reason)
+            ) {
+                $rejection->driver_controllable  = false;
+                $rejection->carrier_controllable = false;
+            }
+
+            return true;
+        });
+
+        // 🔒 Safety: always reset flag after save
+        static::saved(function (Rejection $rejection) {
+            $rejection->skipControllableEnforcement = false;
+        });
     }
 }
