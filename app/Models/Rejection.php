@@ -22,6 +22,22 @@ class Rejection extends Model
     ];
 
     /**
+     * Internal flag to skip controllable enforcement.
+     * Not persisted to DB.
+     */
+    protected bool $skipControllableEnforcement = false;
+
+    /**
+     * Public method to explicitly disable enforcement.
+     * Keeps service layer clean and expressive.
+     */
+    public function skipControllableEnforcement(): self
+    {
+        $this->skipControllableEnforcement = true;
+        return $this;
+    }
+
+    /**
      * Get the advanced rejected block for this rejection.
      */
     public function advancedRejectedBlock()
@@ -60,8 +76,13 @@ class Rejection extends Model
         }
 
         // Automatically adjust 'driver_controllable' and 'carrier_controllable' before saving or updating
-        static::saving(function ($rejection) {
-            // ✅ Guard against null rejection_reason before running regex
+        static::saving(function (Rejection $rejection) {
+
+            // 🚫 Skip enforcement if explicitly disabled
+            if ($rejection->skipControllableEnforcement) {
+                return true;
+            }
+
             if (empty($rejection->rejection_reason)) {
                 return true;
             }
@@ -69,6 +90,7 @@ class Rejection extends Model
             if (preg_match('/amazon/i', $rejection->rejection_reason)) {
                 $rejection->driver_controllable  = false;
                 $rejection->carrier_controllable = false;
+                return true;
             }
 
             if (
@@ -80,6 +102,11 @@ class Rejection extends Model
             }
 
             return true;
+        });
+
+        // 🔒 Safety: always reset flag after save
+        static::saved(function (Rejection $rejection) {
+            $rejection->skipControllableEnforcement = false;
         });
     }
 }

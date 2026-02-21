@@ -295,7 +295,7 @@ class RejectionService
 
         $rejection = Rejection::findOrFail($id);
 
-        $rejection->update([
+        $rejection->fill([
             'tenant_id'            => $data['tenant_id'],
             'date'                 => $data['date'],
             'penalty'              => $data['penalty'],
@@ -304,6 +304,11 @@ class RejectionService
             'driver_controllable'  => $data['driver_controllable'],
             'rejection_reason'     => $data['rejection_reason'] ?? null,
         ]);
+
+        // 🚫 Explicitly skip controllable enforcement
+        $rejection->skipControllableEnforcement();
+
+        $rejection->save();
 
         // Remove old sub-records and recreate
         $rejection->advancedRejectedBlock()->delete();
