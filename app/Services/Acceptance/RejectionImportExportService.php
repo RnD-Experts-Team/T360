@@ -450,7 +450,6 @@ class RejectionImportExportService
 
         $driverLookup = $this->buildDriverLookup($request->file('trips_file'));
         $updated      = $this->backfillDriverNamesFromLookup($driverLookup, $resolvedTenantId);
-
         return ['updated' => $updated];
     }
 
@@ -536,55 +535,17 @@ class RejectionImportExportService
 
     private function backfillDriverNamesFromLookup(array $driverLookup, int $tenantId): int
     {
-        if (empty($driverLookup)) {
-            return 0;
-        }
-
         $updated = 0;
 
-        // Chunk to avoid giant SQL statements
-        foreach (array_chunk($driverLookup, 1000, true) as $chunk) {
+        foreach ($driverLookup as $loadId => $driverName) {
+            $load = RejectedLoad::where('load_id', $loadId)
+                ->whereHas('rejection', fn($q) => $q->where('tenant_id', $tenantId))
+                ->first();
 
-            $loadIds = array_keys($chunk);
-
-            $cases = [];
-            $bindings = [];
-
-            foreach ($chunk as $loadId => $driverName) {
-                $cases[] = "WHEN load_id = ? THEN ?";
-                $bindings[] = $loadId;
-                $bindings[] = $driverName;
+            if ($load) {
+                $load->update(['driver_name' => $driverName]);
+                $updated++;
             }
-
-            $caseSql = implode(' ', $cases);
-
-            $inPlaceholders = implode(',', array_fill(0, count($loadIds), '?'));
-
-            $bindings = array_merge(
-                $bindings,
-                $loadIds,
-                [$tenantId]
-            );
-
-            $sql = "
-            UPDATE rejected_loads rl
-            INNER JOIN rejections r ON r.id = rl.rejection_id
-            SET rl.driver_name = CASE
-                $caseSql
-                ELSE rl.driver_name
-            END
-            WHERE rl.load_id IN ($inPlaceholders)
-              AND r.tenant_id = ?
-              AND (
-                    rl.driver_name IS NULL
-                    OR rl.driver_name != CASE
-                        $caseSql
-                        ELSE rl.driver_name
-                    END
-              )
-        ";
-
-            $updated += DB::update($sql, $bindings);
         }
 
         return $updated;

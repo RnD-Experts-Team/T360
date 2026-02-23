@@ -908,19 +908,31 @@ const ALL_COLUMNS = [
     key: "penalty",
     label: "Penalty",
     shared: true,
+
     getValue: (r) => {
       const isWon = r.disputed === "won";
+
       const isDriverControllable =
         r.driver_controllable === true ||
         r.driver_controllable === 1 ||
         r.driver_controllable === "1" ||
         r.driver_controllable === "true";
 
-      if (isWon && isDriverControllable) return 0;
+      const isCarrierControllable =
+        r.carrier_controllable === true ||
+        r.carrier_controllable === 1 ||
+        r.carrier_controllable === "1" ||
+        r.carrier_controllable === "true";
+
+      // ✅ WON
       if (isWon) return 0;
+
+      // ✅ Carrier NOT controllable → always 0
+      if (!isCarrierControllable) return 0;
 
       return r.penalty != null ? Number(r.penalty) : null;
     },
+
     render: (r) => {
       const originalPenalty = r.penalty != null ? Number(r.penalty).toFixed(2) : null;
 
@@ -932,6 +944,12 @@ const ALL_COLUMNS = [
         r.driver_controllable === "1" ||
         r.driver_controllable === "true";
 
+      const isCarrierControllable =
+        r.carrier_controllable === true ||
+        r.carrier_controllable === 1 ||
+        r.carrier_controllable === "1" ||
+        r.carrier_controllable === "true";
+
       if (!originalPenalty && !isWon) {
         return h("span", { class: "text-muted-foreground" }, "—");
       }
@@ -939,7 +957,6 @@ const ALL_COLUMNS = [
       // ✅ WON + DRIVER CONTROLLABLE
       if (isWon && isDriverControllable) {
         return h("div", { class: "flex flex-col leading-tight" }, [
-          // Main 0.00 (LEFT)
           h(
             "span",
             {
@@ -947,8 +964,6 @@ const ALL_COLUMNS = [
             },
             "0.00"
           ),
-
-          // Driver note (RIGHT)
           h(
             "span",
             {
@@ -959,7 +974,7 @@ const ALL_COLUMNS = [
         ]);
       }
 
-      // ✅ WON but NOT driver controllable
+      // ✅ WON (not driver controllable)
       if (isWon) {
         return h(
           "span",
@@ -970,7 +985,40 @@ const ALL_COLUMNS = [
         );
       }
 
-      // Normal
+      // ✅ Carrier NOT controllable
+      if (!isCarrierControllable) {
+        // If driver IS controllable → show driver note
+        if (isDriverControllable && originalPenalty) {
+          return h("div", { class: "flex flex-col leading-tight" }, [
+            h(
+              "span",
+              {
+                class:
+                  "font-mono text-xs font-semibold text-green-600 dark:text-green-400",
+              },
+              "0.00"
+            ),
+            h(
+              "span",
+              {
+                class: "self-end text-[10px] opacity-60 font-mono whitespace-nowrap",
+              },
+              `Driver: ${originalPenalty}`
+            ),
+          ]);
+        }
+
+        // If both false → just 0
+        return h(
+          "span",
+          {
+            class: "font-mono text-xs font-semibold text-green-600 dark:text-green-400",
+          },
+          "0.00"
+        );
+      }
+
+      // ✅ Normal case
       return h("span", { class: "font-mono text-xs" }, originalPenalty);
     },
   },

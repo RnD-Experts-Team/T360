@@ -306,7 +306,7 @@ class RejectionsController extends Controller
                 return back()->with('importValidation', [
                     'success'    => true,
                     'trips_only' => true,
-                    'results'    => ['summary' => ['total' => 0, 'valid' => 0, 'invalid' => 0]],
+                    'results'    => ['summary' => ['total' => -1, 'valid' => 0, 'invalid' => 0]],
                 ]);
             }
 
@@ -348,7 +348,6 @@ class RejectionsController extends Controller
         try {
             $tenantId  = session('acceptance_load_tenant');
             $tripsOnly = session('acceptance_load_trips_only', false);
-
             if ($tripsOnly) {
                 $tripsPath = session('acceptance_load_trips_file');
                 if (!$tripsPath || !Storage::exists($tripsPath)) {
@@ -360,7 +359,6 @@ class RejectionsController extends Controller
 
                 $importRequest = new Request();
                 $importRequest->files->set('trips_file', $tripsFile);
-
                 $result = $this->rejectionImportExportService->importTripsOnly($importRequest, $tenantId ? (int)$tenantId : null);
 
                 Storage::delete($tripsPath);
@@ -368,7 +366,6 @@ class RejectionsController extends Controller
 
                 return back()->with('success', "{$result['updated']} driver names updated from trips.");
             }
-
             $loadsPath = session('acceptance_load_file');
             if (!$loadsPath || !Storage::exists($loadsPath)) {
                 return back()->with('error', 'Import session expired. Please upload the file again.');
