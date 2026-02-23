@@ -10,6 +10,7 @@ use App\Models\RejectedLoad;
 use App\Models\AdvancedRejectedBlock;
 use Illuminate\Support\Facades\Response;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\DB;
 
 class RejectionImportExportService
 {
@@ -471,15 +472,15 @@ class RejectionImportExportService
             return [];
         }
 
-        // ✅ Sanitize trips header too
+        // Sanitize header
         $headerRow = $this->sanitizeHeaders($rawHeader);
         $idx       = array_flip($headerRow);
 
-        $loadIdIdx     = $idx['Load ID']       ?? null;
-        $driverNameIdx = $idx['Driver Name']    ?? null;
-        $operatorIdIdx = $idx['Operator ID']    ?? null;
-        $estCostIdx    = $idx['Estimated Cost'] ?? null;
+        $loadIdIdx     = $idx['Load ID']    ?? null;
+        $driverNameIdx = $idx['Driver Name'] ?? null;
+        $operatorIdIdx = $idx['Operator ID'] ?? null;
 
+        // Load ID + Driver Name are required
         if ($loadIdIdx === null || $driverNameIdx === null) {
             fclose($handle);
             return [];
@@ -500,24 +501,26 @@ class RejectionImportExportService
 
             $driverName = isset($row[$driverNameIdx]) ? trim($row[$driverNameIdx]) : '';
 
+            // ✅ If driver name exists, use it directly
             if (!empty($driverName)) {
                 $lookup[$loadId] = $driverName;
                 continue;
             }
 
-            if ($operatorIdIdx === null || $estCostIdx === null) continue;
+            // ✅ Fallback: look backward for same Operator ID with ANY driver name
+            if ($operatorIdIdx === null) continue;
 
             $operatorId = isset($row[$operatorIdIdx]) ? trim($row[$operatorIdIdx]) : '';
             if (empty($operatorId)) continue;
 
             $resolvedDriver = null;
+
             for ($j = $i - 1; $j >= 0; $j--) {
                 $prevRow      = $allRows[$j];
                 $prevOperator = isset($prevRow[$operatorIdIdx]) ? trim($prevRow[$operatorIdIdx]) : '';
-                $prevCost     = isset($prevRow[$estCostIdx])    ? trim($prevRow[$estCostIdx])    : '';
                 $prevDriver   = isset($prevRow[$driverNameIdx]) ? trim($prevRow[$driverNameIdx]) : '';
 
-                if ($prevOperator === $operatorId && !empty($prevCost) && !empty($prevDriver)) {
+                if ($prevOperator === $operatorId && !empty($prevDriver)) {
                     $resolvedDriver = $prevDriver;
                     break;
                 }
@@ -533,18 +536,55 @@ class RejectionImportExportService
 
     private function backfillDriverNamesFromLookup(array $driverLookup, int $tenantId): int
     {
+        if (empty($driverLookup)) {
+            return 0;
+        }
+
         $updated = 0;
 
-        foreach ($driverLookup as $loadId => $driverName) {
-            $load = RejectedLoad::where('load_id', $loadId)
-                ->whereHas('rejection', fn($q) => $q->where('tenant_id', $tenantId))
-                ->whereNull('driver_name')
-                ->first();
+        // Chunk to avoid giant SQL statements
+        foreach (array_chunk($driverLookup, 1000, true) as $chunk) {
 
-            if ($load) {
-                $load->update(['driver_name' => $driverName]);
-                $updated++;
+            $loadIds = array_keys($chunk);
+
+            $cases = [];
+            $bindings = [];
+
+            foreach ($chunk as $loadId => $driverName) {
+                $cases[] = "WHEN load_id = ? THEN ?";
+                $bindings[] = $loadId;
+                $bindings[] = $driverName;
             }
+
+            $caseSql = implode(' ', $cases);
+
+            $inPlaceholders = implode(',', array_fill(0, count($loadIds), '?'));
+
+            $bindings = array_merge(
+                $bindings,
+                $loadIds,
+                [$tenantId]
+            );
+
+            $sql = "
+            UPDATE rejected_loads rl
+            INNER JOIN rejections r ON r.id = rl.rejection_id
+            SET rl.driver_name = CASE
+                $caseSql
+                ELSE rl.driver_name
+            END
+            WHERE rl.load_id IN ($inPlaceholders)
+              AND r.tenant_id = ?
+              AND (
+                    rl.driver_name IS NULL
+                    OR rl.driver_name != CASE
+                        $caseSql
+                        ELSE rl.driver_name
+                    END
+              )
+        ";
+
+            $updated += DB::update($sql, $bindings);
         }
 
         return $updated;
